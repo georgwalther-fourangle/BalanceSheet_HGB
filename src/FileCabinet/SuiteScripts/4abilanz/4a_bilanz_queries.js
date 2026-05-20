@@ -146,7 +146,7 @@ define(['N/query'], (query) => {
    */
   const getCurrentFyNetIncome = (periodEndId, accountingBook, subsidiaryId) => {
     const acctTypeList = PL_ACCT_TYPES.map((t) => `'${t}'`).join(',');
-    const params = [String(periodEndId), String(periodEndId), String(accountingBook)];
+    const params = [String(periodEndId), String(accountingBook)];
     let subClause = '';
     if (subsidiaryId) {
       subClause = `

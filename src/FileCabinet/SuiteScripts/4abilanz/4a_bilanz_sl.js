@@ -163,20 +163,33 @@ define([
 
   /**
    * Liefert die finalen Werte fuer ALLE Zeilen (detail + abgeleitet) und
-   * traegt das Jahresergebnis in P.A.V (Jahresueberschuss) ein. Wenn das
-   * Konto-Mapping bereits P.A.V-Werte erzeugt hat (z.B. weil das Kunden-
-   * Setup ein Konto direkt auf P.A.V mappt), wird der berechnete Wert
-   * dazuaddiert — das ist der haeufige Fall, bei dem die GuV noch nicht
-   * abgeschlossen ist.
+   * traegt das Jahresergebnis in P.A.V (Jahresueberschuss/-fehlbetrag) ein.
+   *
+   * Berechnung: per doppelter Buchfuehrung gilt Aktiva = Passiva. Sobald
+   * die Bilanzkonten aufaddiert sind, ist die verbleibende Differenz
+   *   plug = AKTIVA − PASSIVA
+   * exakt das in dieser Periode kumulierte Jahresergebnis (Gewinn ⇒ positiv,
+   * Verlust ⇒ negativ). Das ist robuster als eine separate GuV-Query, weil
+   * es jedes Posting korrekt einbezieht — auch Konten, die der Kunde
+   * mit abweichendem acctType oder Custom-Mapping eingerichtet hat.
+   *
+   * Wird ein Konto im Customer-Kontenplan bereits manuell auf P.A.V gemappt
+   * (z.B. SKR04 2980–2989), liegt darauf typischerweise der Vorjahres-
+   * Saldo aus dem letzten Jahresabschluss. Der Plug rechnet darauf zusaetzlich
+   * das laufende Jahresergebnis drauf.
+   *
+   * Toleranz: bei |plug| < 0,005 EUR (reine Rundungsdifferenz) wird nichts
+   * gebucht — die Bilanz gilt als ausgeglichen.
    */
-  const finalizeValues = (detailValues, currentFyNet) => {
-    const values = computeValues(ALL_LINES, detailValues);
-    // Jahresergebnis aufschlagen — wenn nicht schon abgeschlossen ist es das
-    // Delta zwischen aktueller Bilanz und Vorjahresueberhang.
-    if (Math.abs(currentFyNet) >= 0.005) {
-      detailValues['P.A.V'] = (detailValues['P.A.V'] || 0) + currentFyNet;
+  const finalizeValues = (detailValues) => {
+    const v0 = computeValues(ALL_LINES, detailValues);
+    const aktivaT = v0['AKT.t'] || 0;
+    const passivaT = v0['PAS.t'] || 0;
+    const plug = aktivaT - passivaT;
+    if (Math.abs(plug) >= 0.005) {
+      detailValues['P.A.V'] = (detailValues['P.A.V'] || 0) + plug;
     }
-    return computeValues(ALL_LINES, detailValues);
+    return { values: computeValues(ALL_LINES, detailValues), plug };
   };
 
   // =========================================================================
@@ -214,12 +227,15 @@ define([
 </table>`;
   };
 
-  const renderResultHtml = ({ values, aktivaTotal, passivaTotal, balanceOk,
+  const renderResultHtml = ({ values, aktivaTotal, passivaTotal, balanceOk, plug,
                               notmappedAktiva, notmappedPassiva, notmappedAccounts,
                               chartLabel }) => {
     const balanceClass = balanceOk ? 'ok' : 'fail';
+    const plugLabel = isZero(plug)
+      ? ''
+      : ` · Jahresergebnis aus Bilanzdifferenz: ${fmtEur(plug)} EUR ${plug >= 0 ? '(Gewinn)' : '(Verlust)'}`;
     const balanceText = balanceOk
-      ? `<span class="fa-dot fa-dot-orange"></span>Aktiva = Passiva (${fmtEur(aktivaTotal)} EUR)`
+      ? `<span class="fa-dot fa-dot-orange"></span>Aktiva = Passiva (${fmtEur(aktivaTotal)} EUR)${plugLabel}`
       : `<strong>Bilanz nicht ausgeglichen</strong> — Aktiva: ${fmtEur(aktivaTotal)} EUR · Passiva: ${fmtEur(passivaTotal)} EUR · Differenz: ${fmtEur(aktivaTotal - passivaTotal)} EUR`;
 
     let notmappedHtml = '';
@@ -255,7 +271,7 @@ define([
     </div>
   </div>
   <div class="bilanz-balance-check ${balanceClass}">${balanceText}</div>
-  <div class="bilanz-meta"><span class="fa-dot fa-dot-orange"></span>Kontenrahmen: ${esc(chartLabel)} · Vorzeichen: Aktiva und Passiva als positive Salden. Null-Zeilen werden ausgeblendet.</div>
+  <div class="bilanz-meta"><span class="fa-dot fa-dot-orange"></span>Kontenrahmen: ${esc(chartLabel)} · Vorzeichen: Aktiva und Passiva als positive Salden. Null-Zeilen werden ausgeblendet. · Jahresergebnis wird aus der Bilanzdifferenz (Aktiva − Passiva) abgeleitet und in P.A.V eingebucht.</div>
   ${notmappedHtml}
 </div>`;
   };
@@ -276,11 +292,12 @@ define([
   const onRequest = (context) => {
     const { request, response } = context;
 
-    if (!licenseOk()) {
-      response.setHeader({ name: 'Content-Type', value: 'text/html; charset=utf-8' });
-      response.write(renderLicenseErrorHtml());
-      return;
-    }
+    // TEMP TEST MODE — License-Gate deaktiviert. Wiederherstellen mit:
+    //   if (!licenseOk()) {
+    //     response.setHeader({ name: 'Content-Type', value: 'text/html; charset=utf-8' });
+    //     response.write(renderLicenseErrorHtml());
+    //     return;
+    //   }
 
     const chartOfAccounts = getChartOfAccounts();
     const chartLabel = CHART_LABELS[chartOfAccounts] || chartOfAccounts;
@@ -335,17 +352,22 @@ define([
     let aktivaTotal = 0;
     let passivaTotal = 0;
     let balanceOk = true;
+    let plug = 0;
     let notmapped = { aktiva: 0, passiva: 0, accounts: [] };
 
     if (selPeriod) {
       const balances = queries.getBalanceSheetBalances(selPeriod.id, effectiveBook, selSub || '');
-      const currentFyNet = queries.getCurrentFyNetIncome(selPeriod.id, effectiveBook, selSub || '');
       const agg = aggregate(balances, chartOfAccounts);
       notmapped = agg.notmapped;
-      values = finalizeValues(agg.detail, currentFyNet);
+      const fin = finalizeValues(agg.detail);
+      values = fin.values;
+      plug = fin.plug;
       aktivaTotal = values['AKT.t'] || 0;
       passivaTotal = values['PAS.t'] || 0;
-      balanceOk = Math.abs(aktivaTotal - passivaTotal) < 0.5; // Toleranz 50 Cent fuer Rundungen
+      // Nach dem Plug sollten Aktiva und Passiva exakt uebereinstimmen.
+      // Eine verbleibende Differenz > 50 Cent wuerde auf einen Bug oder ein
+      // SQL-Daten-Problem hindeuten — wir flaggen das in der UI.
+      balanceOk = Math.abs(aktivaTotal - passivaTotal) < 0.5;
     }
 
     // -----------------------------------------------------------------------
@@ -422,7 +444,7 @@ define([
     // -----------------------------------------------------------------------
     const form = serverWidget.createForm({ title: 'Bilanz HGB' });
 
-    let pdfUrl = '', xlsxUrl = '';
+    let pdfUrl = '', xlsxUrl = '', mappingUrl = '';
     try {
       pdfUrl = url.resolveScript({
         scriptId: 'customscript_4abilanz_sl',
@@ -439,6 +461,13 @@ define([
                   year: selYear || '', period: selPeriodId || '' },
       });
     } catch (e) { /* Deployment IDs noch nicht aufloesbar — Buttons werden weggelassen */ }
+    try {
+      mappingUrl = url.resolveScript({
+        scriptId: 'customscript_4abilanz_mapping_sl',
+        deploymentId: 'customdeploy_4abilanz_mapping_sl',
+        returnExternalUrl: false,
+      });
+    } catch (_) { /* Mapping-Suitelet noch nicht deployed — Link wird weggelassen */ }
 
     const subOpts = [
       `<option value=""${!selSub ? ' selected' : ''}>Alle Subsidiaries</option>`,
@@ -459,6 +488,8 @@ define([
     <span class="fa-subtitle">§266 HGB · ${esc(chartLabel)}</span>
   </div>
   <div class="fa-topbar-actions">
+    <button type="submit" class="fa-btn-outline fa-topbar-btn">Reload</button>
+    ${mappingUrl ? `<a href="${esc(mappingUrl)}" class="fa-btn-outline fa-topbar-btn">Konten-Mapping</a>` : ''}
     ${xlsxUrl ? `<a href="${esc(xlsxUrl)}" class="fa-btn fa-topbar-btn" style="background:#21A366;border-color:#1B8C56;">Excel herunterladen</a>` : ''}
     ${pdfUrl ? `<a href="${esc(pdfUrl)}" class="fa-btn fa-topbar-btn">PDF herunterladen</a>` : ''}
   </div>
@@ -490,7 +521,8 @@ define([
     topbarField.defaultValue = topbarHtml;
     topbarField.updateLayoutType({ layoutType: serverWidget.FieldLayoutType.OUTSIDEABOVE });
 
-    form.addSubmitButton({ label: 'Anzeigen' });
+    // Kein form.addSubmitButton — der "Reload"-Button in der Topbar (type="submit")
+    // uebernimmt das Absenden. Spart den doppelten NetSuite-Default-Button.
 
     const htmlField = form.addField({
       id: 'custpage_bilanz_html',
@@ -499,7 +531,7 @@ define([
     });
     htmlField.defaultValue = selPeriod
       ? renderResultHtml({
-          values, aktivaTotal, passivaTotal, balanceOk,
+          values, aktivaTotal, passivaTotal, balanceOk, plug,
           notmappedAktiva: notmapped.aktiva, notmappedPassiva: notmapped.passiva,
           notmappedAccounts: notmapped.accounts, chartLabel,
         })

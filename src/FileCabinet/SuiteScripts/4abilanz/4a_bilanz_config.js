@@ -76,29 +76,35 @@ define([], () => {
       components: ['A.II.1', 'A.II.2', 'A.II.3', 'A.II.4'] },
 
     { id: 'A.III', side: 'aktiva', type: 'header',  level: 1, label: 'III. Finanzanlagen' },
+    // Achtung SKR03-Kollision: 800–869 sind in SKR03 historisch Eigenkapital
+    // (Stammkapital, Rücklagen, Vortrag). Damit padded Konten wie B81 80010
+    // korrekt nach P.A.* fliessen, lassen wir A.III.* in SKR03 leer und
+    // vertrauen darauf, dass Finanzanlagen — falls vorhanden — ueber acctType
+    // (kein dedizierter NetSuite-Typ, ggf. OthAsset) oder kundenspezifisches
+    // Mapping ankommen. Standard SKR04 hat eindeutige Bereiche 140–179.
     { id: 'A.III.1', side: 'aktiva', type: 'detail', level: 2,
       label: '1. Anteile an verbundenen Unternehmen',
-      skr03: [[800, 819]], skr04: [[140, 144]],
+      skr03: [], skr04: [[140, 144]],
       acctTypes: [] },
     { id: 'A.III.2', side: 'aktiva', type: 'detail', level: 2,
       label: '2. Ausleihungen an verbundene Unternehmen',
-      skr03: [[820, 829]], skr04: [[145, 149]],
+      skr03: [], skr04: [[145, 149]],
       acctTypes: [] },
     { id: 'A.III.3', side: 'aktiva', type: 'detail', level: 2,
       label: '3. Beteiligungen',
-      skr03: [[830, 839]], skr04: [[150, 159]],
+      skr03: [], skr04: [[150, 159]],
       acctTypes: [] },
     { id: 'A.III.4', side: 'aktiva', type: 'detail', level: 2,
       label: '4. Ausleihungen an Unternehmen mit Beteiligungsverhältnis',
-      skr03: [[840, 849]], skr04: [[160, 169]],
+      skr03: [], skr04: [[160, 169]],
       acctTypes: [] },
     { id: 'A.III.5', side: 'aktiva', type: 'detail', level: 2,
       label: '5. Wertpapiere des Anlagevermögens',
-      skr03: [[850, 859]], skr04: [[170, 174]],
+      skr03: [], skr04: [[170, 174]],
       acctTypes: [] },
     { id: 'A.III.6', side: 'aktiva', type: 'detail', level: 2,
       label: '6. Sonstige Ausleihungen',
-      skr03: [[860, 899]], skr04: [[175, 179]],
+      skr03: [], skr04: [[175, 179]],
       acctTypes: [] },
     { id: 'A.III.t', side: 'aktiva', type: 'subtotal', level: 1, label: 'Summe Finanzanlagen',
       components: ['A.III.1','A.III.2','A.III.3','A.III.4','A.III.5','A.III.6'] },
@@ -131,7 +137,10 @@ define([], () => {
       label: 'II. Forderungen und sonstige Vermögensgegenstände' },
     { id: 'B.II.1', side: 'aktiva', type: 'detail', level: 2,
       label: '1. Forderungen aus Lieferungen und Leistungen',
-      skr03: [[1200, 1379], [1400, 1409]], skr04: [[1200, 1209], [1400, 1499]],
+      // SKR03 1400–1499 = Debitoren / Forderungen aL+L. Frueher
+      // hatten wir versehentlich 1200–1379 mit drin — das ist der Bank-
+      // bereich (gehoert in B.IV), nicht Forderungen.
+      skr03: [[1400, 1499]], skr04: [[1200, 1209], [1400, 1499]],
       acctTypes: ['AcctRec', 'Unbilled'] },
     { id: 'B.II.2', side: 'aktiva', type: 'detail', level: 2,
       label: '2. Forderungen gegen verbundene Unternehmen',
@@ -198,7 +207,11 @@ define([], () => {
       skr03: [[800, 819]], skr04: [[2900, 2909]],
       acctTypes: [] },
     { id: 'P.A.II', side: 'passiva', type: 'detail', level: 1, label: 'II. Kapitalrücklage',
-      skr03: [[830, 839]], skr04: [[2910, 2919]],
+      // SKR03 Kapitalrücklage liegt je nach Variante in 820–839; wir decken
+      // beide Bereiche ab. Padded Konten wie 80020 normalisieren zu 800,
+      // landen damit in P.A.I (Gezeichnetes Kapital) statt hier — fuer eine
+      // exakte Trennung braucht der Kunde ein dediziertes Mapping.
+      skr03: [[820, 839]], skr04: [[2910, 2919]],
       acctTypes: [] },
 
     { id: 'P.A.III', side: 'passiva', type: 'header', level: 1, label: 'III. Gewinnrücklagen' },
@@ -259,7 +272,9 @@ define([], () => {
       acctTypes: [] },
     { id: 'P.C.3', side: 'passiva', type: 'detail', level: 1,
       label: '3. Erhaltene Anzahlungen auf Bestellungen',
-      skr03: [[1700, 1709]], skr04: [[3200, 3269]],
+      // SKR03 1710–1719 = Erhaltene Anzahlungen (Anzahlungen von Kunden).
+      // Frueherer Range 1700–1709 hat mit P.C.1 (Anleihen) kollidiert.
+      skr03: [[1710, 1719]], skr04: [[3200, 3269]],
       acctTypes: [] },
     { id: 'P.C.4', side: 'passiva', type: 'detail', level: 1,
       label: '4. Verbindlichkeiten aus Lieferungen und Leistungen',
@@ -286,13 +301,15 @@ define([], () => {
     { id: 'P.D', side: 'passiva', type: 'section', level: 0, label: 'D. Rechnungsabgrenzungsposten',
       components: ['P.D.d'] },
     { id: 'P.D.d', side: 'passiva', type: 'detail', level: 1, label: 'Passive Rechnungsabgrenzung',
-      skr03: [[990, 994]], skr04: [[3900, 3949]],
+      // SKR03 1990–1999 = Passive RAP (kollidiert NICHT mit D.d 990–994 = Aktive RAP).
+      skr03: [[1990, 1999]], skr04: [[3900, 3949]],
       acctTypes: [] },
 
     { id: 'P.E', side: 'passiva', type: 'section', level: 0, label: 'E. Passive latente Steuern',
       components: ['P.E.d'] },
     { id: 'P.E.d', side: 'passiva', type: 'detail', level: 1, label: 'Passive latente Steuern',
-      skr03: [[995, 999]], skr04: [[3950, 3999]],
+      // SKR03 1980–1989 = Passive latente Steuern (klassisches Datev-Schema).
+      skr03: [[1980, 1989]], skr04: [[3950, 3999]],
       acctTypes: [] },
 
     { id: 'PAS.t', side: 'passiva', type: 'total', level: 0, label: 'Summe PASSIVA',
@@ -334,16 +351,25 @@ define([], () => {
   const lookupAccount = (chartOfAccounts, acctNumber, acctType) => {
     // 1) SKR-Range-Lookup (nur wenn Konto-Nr. vorhanden und CoA = skr03|skr04)
     if (chartOfAccounts === 'skr03' || chartOfAccounts === 'skr04') {
-      // Versuche eine fuehrende Nummer aus acctNumber zu lesen (Praefix vor
-      // dem ersten Nicht-Digit). 4-stellige Konten sind Standard, 3-stellige
-      // werden mit *10 normalisiert (klassisches DATEV-Schema).
+      // Fuehrende Ziffernfolge auslesen (Praefix vor erstem Nicht-Digit).
       const m = String(acctNumber || '').match(/^(\d{3,})/);
       if (m) {
-        let n = parseInt(m[1], 10);
-        // Manche Kunden fuehren SKR03 dreistellig — diese Heuristik mappt
-        // 3-stellige Nummern auf den 4-stelligen Bereich (z.B. 800 → 8000).
-        // Wir fragen beide ab und nehmen den ersten Treffer.
-        for (const candidate of (m[1].length === 3 ? [n, n * 10] : [n])) {
+        const digits = m[1];
+        const n = parseInt(digits, 10);
+        // Kandidat-Nummern bauen, damit folgende Schemas alle erkannt werden:
+        //   - 4-stellig direkt:        "1200" → 1200
+        //   - 3-stellig historisch:    "800"  → 8000 (Pendant) oder 800 (selbst)
+        //   - 5/6-stellig padded:      "120000" → 1200 (erste 4) oder 120 (erste 3)
+        //                              "80010"  → 8001 (erste 4) oder 800 (erste 3)
+        //
+        // Reihenfolge der Kandidaten ist wichtig: erst die spezifischste
+        // Interpretation (exakt), dann das 4-stellige Schema, dann das
+        // 3-stellige Eigenkapital-Schema. Der erste Range-Hit gewinnt.
+        const candidates = [n];
+        if (digits.length === 3) candidates.push(n * 10);
+        if (digits.length >= 5) candidates.push(parseInt(digits.slice(0, 4), 10));
+        if (digits.length >= 4) candidates.push(parseInt(digits.slice(0, 3), 10));
+        for (const candidate of candidates) {
           for (const r of index.skrToLine[chartOfAccounts]) {
             if (candidate >= r.lo && candidate <= r.hi) return { lineId: r.lineId, side: r.side };
           }

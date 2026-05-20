@@ -1,12 +1,12 @@
-<suitelet scriptid="customscript_4abilanz_sl">
-  <description>Bilanz nach §266 HGB (Kapitalgesellschaft) — SKR03/SKR04 oder NetSuite-Kontotyp.</description>
+<suitelet scriptid="customscript_4abilanz_mapping_sl">
+  <description>Bilanz HGB — Konten-Mapping-View: read-only, zeigt fuer jedes BS-Konto die zugewiesene Bilanz-Zeile.</description>
   <isinactive>F</isinactive>
-  <name>4a Bilanz HGB</name>
+  <name>4a Bilanz HGB — Konten-Mapping</name>
   <notifyadmins>F</notifyadmins>
   <notifyowner>T</notifyowner>
-  <scriptfile>[/SuiteScripts/4abilanz/4a_bilanz_sl.js]</scriptfile>
+  <scriptfile>[/SuiteScripts/4abilanz/4a_bilanz_mapping_sl.js]</scriptfile>
   <scriptdeployments>
-    <scriptdeployment scriptid="customdeploy_4abilanz_sl">
+    <scriptdeployment scriptid="customdeploy_4abilanz_mapping_sl">
       <allemployees>F</allemployees>
       <allpartners>F</allpartners>
       <allroles>T</allroles>
@@ -15,18 +15,18 @@
       <loglevel>DEBUG</loglevel>
       <runasrole></runasrole>
       <status>RELEASED</status>
-      <title>4a Bilanz HGB</title>
-      <custscript_4abilanz_chartofaccounts>skr03</custscript_4abilanz_chartofaccounts>
+      <title>4a Bilanz HGB — Konten-Mapping</title>
+      <custscript_4abilanz_map_chart>skr03</custscript_4abilanz_map_chart>
     </scriptdeployment>
   </scriptdeployments>
   <scriptcustomfields>
-    <scriptcustomfield scriptid="custscript_4abilanz_chartofaccounts">
+    <scriptcustomfield scriptid="custscript_4abilanz_map_chart">
       <accesslevel>2</accesslevel>
       <applyformatting>F</applyformatting>
       <checkspelling>F</checkspelling>
       <defaultchecked>F</defaultchecked>
-      <defaultvalue>skr04</defaultvalue>
-      <description>Kontenrahmen-Mapping: skr03 | skr04 | nstype (NetSuite-Kontotyp-Fallback).</description>
+      <defaultvalue>skr03</defaultvalue>
+      <description>Kontenrahmen-Mapping: skr03 | skr04 | nstype.</description>
       <displaytype>NORMAL</displaytype>
       <fieldtype>TEXT</fieldtype>
       <isformula>F</isformula>
