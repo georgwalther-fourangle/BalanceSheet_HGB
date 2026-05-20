@@ -1,0 +1,31 @@
+# IDEs and editors
+.idea
+*.iml
+*.iws
+.project
+.classpath
+*.launch
+.settings
+*.sublime-workspace
+.vscode
+
+# Dependency directories
+node_modules
+
+# Logs
+logs
+*.log
+npm-debug.log*
+
+# Packaged SuiteCloud projects
+build
+
+# System Files
+.DS_Store
+Thumbs.db
+
+# Output of 'npm pack'
+*.tgz
+
+# Project config — local SDF authId, not portable across machines
+project.json

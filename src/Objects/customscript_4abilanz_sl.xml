@@ -1,0 +1,30 @@
+<suitelet scriptid="customscript_4abilanz_sl">
+  <description>Bilanz nach §266 HGB (Kapitalgesellschaft) — SKR03/SKR04 oder NetSuite-Kontotyp.</description>
+  <isinactive>F</isinactive>
+  <name>4a Bilanz HGB</name>
+  <notifyadmins>F</notifyadmins>
+  <notifyowner>T</notifyowner>
+  <scriptfile>[/SuiteScripts/4abilanz/4a_bilanz_sl.js]</scriptfile>
+  <!--
+    Bewusst KEIN <scriptdeployments>-Element: das Deployment-Record wird
+    einmal initial in NetSuite angelegt und danach ausschliesslich via UI
+    gepflegt. SDF fasst es nicht mehr an, damit Einstellungen wie Audience-
+    Rolle, LogLevel etc. stabil bleiben (gleiche Konvention wie BWA).
+  -->
+  <scriptcustomfields>
+    <scriptcustomfield scriptid="custscript_4abilanz_chartofaccounts">
+      <accesslevel>2</accesslevel>
+      <applyformatting>F</applyformatting>
+      <checkspelling>F</checkspelling>
+      <defaultchecked>F</defaultchecked>
+      <defaultvalue>skr04</defaultvalue>
+      <description>Kontenrahmen-Mapping: skr03 | skr04 | nstype (NetSuite-Kontotyp-Fallback).</description>
+      <displaytype>NORMAL</displaytype>
+      <fieldtype>TEXT</fieldtype>
+      <isformula>F</isformula>
+      <ismandatory>F</ismandatory>
+      <label>Kontenrahmen</label>
+      <storevalue>T</storevalue>
+    </scriptcustomfield>
+  </scriptcustomfields>
+</suitelet>
