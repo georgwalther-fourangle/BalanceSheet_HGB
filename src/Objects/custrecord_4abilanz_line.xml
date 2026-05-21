@@ -1,0 +1,17 @@
+<othercustomfield scriptid="custrecord_4abilanz_line">
+  <label>Bilanz HGB-Zeile</label>
+  <description>Override der Konto-Zuordnung zur HGB-§266-Bilanzzeile. Wenn gesetzt, hat dieser Wert Vorrang vor dem automatischen SKR/Account-Typ-Mapping. Pflege über das 4a Bilanz HGB - Konten-Mapping-Suitelet oder direkt am Account-Record.</description>
+  <rectype>-112</rectype>
+  <accesslevel>2</accesslevel>
+  <applyformatting>F</applyformatting>
+  <checkspelling>F</checkspelling>
+  <defaultchecked>F</defaultchecked>
+  <displaytype>NORMAL</displaytype>
+  <fieldtype>SELECT</fieldtype>
+  <selectrecordtype>[scriptid=customlist_4abilanz_lines]</selectrecordtype>
+  <globalsearch>F</globalsearch>
+  <isformula>F</isformula>
+  <ismandatory>F</ismandatory>
+  <showinlist>T</showinlist>
+  <storevalue>T</storevalue>
+</othercustomfield>

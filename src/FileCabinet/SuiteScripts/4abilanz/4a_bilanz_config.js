@@ -341,6 +341,39 @@ define([], () => {
   const allLines = aktiva.concat(passiva);
   const index = buildIndex(allLines);
 
+  // ---------------------------------------------------------------------------
+  // Customlist-Bruecke: jede Detail-Zeile bekommt eine stabile `scriptid`
+  // (z.B. "val_a_ii_3"), die mit der entsprechenden customvalue-scriptid in
+  // customlist_4abilanz_lines.xml uebereinstimmen MUSS. Werden hier oder im
+  // XML neue Zeilen ergaenzt, muss die jeweils andere Seite mitziehen — sonst
+  // findet die Aggregation den Override nicht und faellt auf den SKR-Lookup
+  // zurueck.
+  //
+  // Subtotal/header/section/total-Zeilen bekommen KEINE scriptid: sie sind
+  // berechnete Zeilen und sollen im Dropdown nicht auswaehlbar sein.
+  // ---------------------------------------------------------------------------
+  const toScriptid = (lineId) => 'val_' + String(lineId).toLowerCase().replace(/\./g, '_');
+  for (const ln of allLines) {
+    if (ln.type === 'detail') ln.scriptid = toScriptid(ln.id);
+  }
+
+  const scriptidToLineId = {};
+  for (const ln of allLines) {
+    if (ln.scriptid) scriptidToLineId[ln.scriptid] = ln.id;
+  }
+
+  // Sucht die Line zu einer customvalue-scriptid (case-insensitive — SuiteQL
+  // gibt scriptids manchmal upper-case zurueck).
+  const getLineByScriptid = (sid) => {
+    if (!sid) return null;
+    const lineId = scriptidToLineId[String(sid).toLowerCase()];
+    if (!lineId) return null;
+    for (const ln of allLines) if (ln.id === lineId) return ln;
+    return null;
+  };
+
+  const getDetailLines = () => allLines.filter((ln) => ln.type === 'detail');
+
   /**
    * Findet die Bilanz-Zeile fuer ein einzelnes Konto.
    *   chartOfAccounts: 'skr03' | 'skr04' | 'nstype'
@@ -414,5 +447,8 @@ define([], () => {
     allLines,
     lookupAccount,
     computeValues,
+    getLineByScriptid,
+    getDetailLines,
+    toScriptid,
   };
 });

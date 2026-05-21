@@ -16,30 +16,46 @@ define(['./4a_bilanz_style', './4a_bilanz_config'], (style, config) => {
 
   const { esc, fmtEur, isZero, stripInvalidXml } = style;
 
-  const renderSideTable = (lines, values, blank) => {
+  const renderSideTable = (lines, values, blank, valuesPrev, prevColLabel) => {
+    const hasPrev = !!valuesPrev;
+    const colCount = hasPrev ? 3 : 2;
     const rows = lines.map((ln) => {
       if (ln.type === 'header' || ln.type === 'section') {
         const cls = ln.type === 'section' ? 'section' : 'header';
-        return `<tr class="${cls}"><td class="lbl" colspan="2">${esc(stripInvalidXml(ln.label))}</td></tr>`;
+        return `<tr class="${cls}"><td class="lbl" colspan="${colCount}">${esc(stripInvalidXml(ln.label))}</td></tr>`;
       }
+      const v = values[ln.id];
+      const vPrev = hasPrev ? valuesPrev[ln.id] : 0;
+      const prevCell = hasPrev
+        ? `<td class="num prev" align="right">${blank || isZero(vPrev) ? '' : fmtEur(vPrev)}</td>`
+        : '';
       if (ln.type === 'total') {
         return `<tr class="total"><td class="lbl">${esc(stripInvalidXml(ln.label))}</td>`
-          + `<td class="num" align="right">${blank ? '' : fmtEur(values[ln.id])}</td></tr>`;
+          + `<td class="num" align="right">${blank ? '' : fmtEur(v)}</td>`
+          + (hasPrev ? `<td class="num prev" align="right">${blank ? '' : fmtEur(vPrev)}</td>` : '')
+          + '</tr>';
       }
       if (ln.type === 'subtotal') {
         return `<tr class="subtotal"><td class="lbl">${esc(stripInvalidXml(ln.label))}</td>`
-          + `<td class="num" align="right">${blank ? '' : fmtEur(values[ln.id])}</td></tr>`;
+          + `<td class="num" align="right">${blank ? '' : fmtEur(v)}</td>`
+          + (hasPrev ? `<td class="num prev" align="right">${blank ? '' : fmtEur(vPrev)}</td>` : '')
+          + '</tr>';
       }
-      // detail
-      const v = values[ln.id];
-      if (isZero(v)) return '';
+      // detail — hide row only if BOTH current and prev are zero
+      if (isZero(v) && (!hasPrev || isZero(vPrev))) return '';
       const indent = ln.level >= 2 ? ' indent' : '';
       return `<tr class="detail${indent}"><td class="lbl">${esc(stripInvalidXml(ln.label))}</td>`
-        + `<td class="num" align="right">${fmtEur(v)}</td></tr>`;
+        + `<td class="num" align="right">${isZero(v) ? '' : fmtEur(v)}</td>`
+        + (hasPrev ? `<td class="num prev" align="right">${isZero(vPrev) ? '' : fmtEur(vPrev)}</td>` : '')
+        + '</tr>';
     }).join('');
     return `<table>
   <thead>
-    <tr><th class="lbl">Position</th><th class="num" align="right">EUR</th></tr>
+    <tr>
+      <th class="lbl">Position</th>
+      <th class="num" align="right">EUR</th>
+      ${hasPrev ? `<th class="num prev" align="right">${esc(stripInvalidXml(prevColLabel || 'Vorjahr'))}</th>` : ''}
+    </tr>
   </thead>
   <tbody>${rows}</tbody>
 </table>`;
@@ -48,13 +64,14 @@ define(['./4a_bilanz_style', './4a_bilanz_config'], (style, config) => {
   const renderPdfXml = ({ company, subsidiaryLabel, periodLabel, chartLabel,
                          aktivaLines, passivaLines, values,
                          aktivaTotal, passivaTotal, balanceOk,
-                         notmappedAktiva, notmappedPassiva }) => {
+                         notmappedAktiva, notmappedPassiva,
+                         valuesPrev, prevColLabel }) => {
 
     const aktivaBlank = isZero(aktivaTotal) && aktivaLines.every((l) => l.type !== 'detail' || isZero(values[l.id]));
     const passivaBlank = isZero(passivaTotal) && passivaLines.every((l) => l.type !== 'detail' || isZero(values[l.id]));
 
-    const aktivaHtml = renderSideTable(aktivaLines, values, aktivaBlank);
-    const passivaHtml = renderSideTable(passivaLines, values, passivaBlank);
+    const aktivaHtml = renderSideTable(aktivaLines, values, aktivaBlank, valuesPrev, prevColLabel);
+    const passivaHtml = renderSideTable(passivaLines, values, passivaBlank, valuesPrev, prevColLabel);
 
     const notmappedHtml = (!isZero(notmappedAktiva) || !isZero(notmappedPassiva))
       ? `<p class="warn">⚠ Nicht zugeordnete Salden — Aktiva: ${esc(fmtEur(notmappedAktiva))} EUR, Passiva: ${esc(fmtEur(notmappedPassiva))} EUR. Bitte Kontenrahmen pruefen.</p>`
@@ -103,6 +120,9 @@ define(['./4a_bilanz_style', './4a_bilanz_config'], (style, config) => {
                    border-top: 1pt solid #E85D04; }
   tr.total td { font-weight: bold; background-color: #E85D04; color: #fff;
                 border-top: 2pt solid #C64E00; border-bottom: 2pt solid #C64E00; }
+  th.prev, td.prev { color: #6B7280; border-left: 0.5pt solid #C7C7C7; padding-left: 6pt; }
+  tr.total td.prev    { color: #fff; }
+  tr.subtotal td.prev { color: #1F2937; }
   .side-title { color: #E85D04; font-size: 8pt; font-weight: bold;
                 text-transform: uppercase; letter-spacing: 0.05em;
                 border-bottom: 1pt solid #E85D04; padding-bottom: 3pt; margin-bottom: 4pt; }

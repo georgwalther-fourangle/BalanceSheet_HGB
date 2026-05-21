@@ -1,0 +1,58 @@
+<customlist scriptid="customlist_4abilanz_lines">
+  <name>4a Bilanz HGB-Zeilen</name>
+  <description>Zuordnungsliste für Accounts zu Bilanz-HGB-Zeilen (§266 Kapitalgesellschaft). Werte sind in SDF gepflegt — jedes Bundle-Update synchronisiert die Liste 1:1. Die scriptids sind die stabile Bruecke zur Code-Config (4a_bilanz_config.js, getDetailLines). Subtotals/Sections sind nicht aufgefuehrt — sie werden berechnet und sollen nicht direkt zugeordnet werden.</description>
+  <isinactive>F</isinactive>
+  <ismatrixoption>F</ismatrixoption>
+  <isordered>T</isordered>
+  <customvalues>
+    <customvalue scriptid="val_a_i_1">   <value>A.I.1 Selbst geschaffene Schutzrechte</value>          <isinactive>F</isinactive></customvalue>
+    <customvalue scriptid="val_a_i_2">   <value>A.I.2 Konzessionen, Schutzrechte, Lizenzen</value>     <isinactive>F</isinactive></customvalue>
+    <customvalue scriptid="val_a_i_3">   <value>A.I.3 Geschäfts- oder Firmenwert</value>               <isinactive>F</isinactive></customvalue>
+    <customvalue scriptid="val_a_i_4">   <value>A.I.4 Anzahlungen (immateriell)</value>               <isinactive>F</isinactive></customvalue>
+    <customvalue scriptid="val_a_ii_1">  <value>A.II.1 Grundstücke und Bauten</value>                <isinactive>F</isinactive></customvalue>
+    <customvalue scriptid="val_a_ii_2">  <value>A.II.2 Technische Anlagen und Maschinen</value>      <isinactive>F</isinactive></customvalue>
+    <customvalue scriptid="val_a_ii_3">  <value>A.II.3 BGA / Andere Anlagen</value>                  <isinactive>F</isinactive></customvalue>
+    <customvalue scriptid="val_a_ii_4">  <value>A.II.4 Anlagen im Bau / Anzahlungen</value>          <isinactive>F</isinactive></customvalue>
+    <customvalue scriptid="val_a_iii_1"> <value>A.III.1 Anteile verbundene Unternehmen</value>       <isinactive>F</isinactive></customvalue>
+    <customvalue scriptid="val_a_iii_2"> <value>A.III.2 Ausleihungen verbundene Unternehmen</value>  <isinactive>F</isinactive></customvalue>
+    <customvalue scriptid="val_a_iii_3"> <value>A.III.3 Beteiligungen</value>                        <isinactive>F</isinactive></customvalue>
+    <customvalue scriptid="val_a_iii_4"> <value>A.III.4 Ausleihungen Beteiligungsuntern.</value>    <isinactive>F</isinactive></customvalue>
+    <customvalue scriptid="val_a_iii_5"> <value>A.III.5 Wertpapiere Anlagevermögen</value>           <isinactive>F</isinactive></customvalue>
+    <customvalue scriptid="val_a_iii_6"> <value>A.III.6 Sonstige Ausleihungen</value>                <isinactive>F</isinactive></customvalue>
+    <customvalue scriptid="val_b_i_1">   <value>B.I.1 Roh-, Hilfs- und Betriebsstoffe</value>        <isinactive>F</isinactive></customvalue>
+    <customvalue scriptid="val_b_i_2">   <value>B.I.2 Unfertige Erzeugnisse / Leistungen</value>     <isinactive>F</isinactive></customvalue>
+    <customvalue scriptid="val_b_i_3">   <value>B.I.3 Fertige Erzeugnisse und Waren</value>          <isinactive>F</isinactive></customvalue>
+    <customvalue scriptid="val_b_i_4">   <value>B.I.4 Anzahlungen (Vorräte)</value>                  <isinactive>F</isinactive></customvalue>
+    <customvalue scriptid="val_b_ii_1">  <value>B.II.1 Forderungen aus L&amp;L</value>                <isinactive>F</isinactive></customvalue>
+    <customvalue scriptid="val_b_ii_2">  <value>B.II.2 Forderungen verbundene Unternehmen</value>    <isinactive>F</isinactive></customvalue>
+    <customvalue scriptid="val_b_ii_3">  <value>B.II.3 Forderungen Beteiligungsunternehmen</value>  <isinactive>F</isinactive></customvalue>
+    <customvalue scriptid="val_b_ii_4">  <value>B.II.4 Sonstige Vermögensgegenstände</value>         <isinactive>F</isinactive></customvalue>
+    <customvalue scriptid="val_b_iii_1"> <value>B.III.1 Anteile verbundene Unt. (Wertp.)</value>    <isinactive>F</isinactive></customvalue>
+    <customvalue scriptid="val_b_iii_2"> <value>B.III.2 Sonstige Wertpapiere</value>                 <isinactive>F</isinactive></customvalue>
+    <customvalue scriptid="val_b_iv">    <value>B.IV Kasse, Bank, Schecks</value>                   <isinactive>F</isinactive></customvalue>
+    <customvalue scriptid="val_c_d">     <value>C. Aktive Rechnungsabgrenzung</value>                <isinactive>F</isinactive></customvalue>
+    <customvalue scriptid="val_d_d">     <value>D. Aktive latente Steuern</value>                    <isinactive>F</isinactive></customvalue>
+    <customvalue scriptid="val_e_d">     <value>E. Aktiver Unterschiedsbetrag</value>                <isinactive>F</isinactive></customvalue>
+    <customvalue scriptid="val_p_a_i">   <value>P.A.I Gezeichnetes Kapital</value>                   <isinactive>F</isinactive></customvalue>
+    <customvalue scriptid="val_p_a_ii">  <value>P.A.II Kapitalrücklage</value>                       <isinactive>F</isinactive></customvalue>
+    <customvalue scriptid="val_p_a_iii_1"><value>P.A.III.1 Gesetzliche Rücklage</value>               <isinactive>F</isinactive></customvalue>
+    <customvalue scriptid="val_p_a_iii_2"><value>P.A.III.2 Rücklage für eigene Anteile</value>        <isinactive>F</isinactive></customvalue>
+    <customvalue scriptid="val_p_a_iii_3"><value>P.A.III.3 Satzungsmäßige Rücklagen</value>           <isinactive>F</isinactive></customvalue>
+    <customvalue scriptid="val_p_a_iii_4"><value>P.A.III.4 Andere Gewinnrücklagen</value>             <isinactive>F</isinactive></customvalue>
+    <customvalue scriptid="val_p_a_iv">  <value>P.A.IV Gewinn-/Verlustvortrag</value>                <isinactive>F</isinactive></customvalue>
+    <customvalue scriptid="val_p_a_v">   <value>P.A.V Jahresüberschuss/-fehlbetrag</value>           <isinactive>F</isinactive></customvalue>
+    <customvalue scriptid="val_p_b_1">   <value>P.B.1 Pensionsrückstellungen</value>                 <isinactive>F</isinactive></customvalue>
+    <customvalue scriptid="val_p_b_2">   <value>P.B.2 Steuerrückstellungen</value>                   <isinactive>F</isinactive></customvalue>
+    <customvalue scriptid="val_p_b_3">   <value>P.B.3 Sonstige Rückstellungen</value>                <isinactive>F</isinactive></customvalue>
+    <customvalue scriptid="val_p_c_1">   <value>P.C.1 Anleihen</value>                              <isinactive>F</isinactive></customvalue>
+    <customvalue scriptid="val_p_c_2">   <value>P.C.2 Verbindlichkeiten Kreditinstitute</value>     <isinactive>F</isinactive></customvalue>
+    <customvalue scriptid="val_p_c_3">   <value>P.C.3 Erhaltene Anzahlungen</value>                  <isinactive>F</isinactive></customvalue>
+    <customvalue scriptid="val_p_c_4">   <value>P.C.4 Verbindlichkeiten aus L&amp;L</value>            <isinactive>F</isinactive></customvalue>
+    <customvalue scriptid="val_p_c_5">   <value>P.C.5 Verbindlichkeiten aus Wechseln</value>         <isinactive>F</isinactive></customvalue>
+    <customvalue scriptid="val_p_c_6">   <value>P.C.6 Verbindlichkeiten verbundene Untern.</value>  <isinactive>F</isinactive></customvalue>
+    <customvalue scriptid="val_p_c_7">   <value>P.C.7 Verbindlichkeiten Beteiligungsuntern.</value> <isinactive>F</isinactive></customvalue>
+    <customvalue scriptid="val_p_c_8">   <value>P.C.8 Sonstige Verbindlichkeiten</value>             <isinactive>F</isinactive></customvalue>
+    <customvalue scriptid="val_p_d_d">   <value>P.D. Passive Rechnungsabgrenzung</value>             <isinactive>F</isinactive></customvalue>
+    <customvalue scriptid="val_p_e_d">   <value>P.E. Passive latente Steuern</value>                 <isinactive>F</isinactive></customvalue>
+  </customvalues>
+</customlist>

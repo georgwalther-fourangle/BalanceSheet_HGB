@@ -110,7 +110,7 @@ define([
   // =========================================================================
   const { esc, fmtEur, isZero } = style;
   const { aktiva: AKTIVA_LINES, passiva: PASSIVA_LINES, allLines: ALL_LINES,
-          lookupAccount, computeValues } = config;
+          lookupAccount, computeValues, getLineByScriptid } = config;
 
   const MONTHS_DE = ['','Januar','Februar','März','April','Mai','Juni','Juli','August','September','Oktober','November','Dezember'];
 
@@ -125,27 +125,49 @@ define([
   /**
    * Aggregiert Account-Salden zu Bilanz-Detail-Zeilen.
    *
+   * Lookup-Reihenfolge je Konto:
+   *   1) Override am Konto: custrecord_4abilanz_line → customlist-internal-id
+   *      → scriptid → Line aus 4a_bilanz_config.js. Wenn der Wert gesetzt
+   *      ist und auf eine bekannte Detail-Zeile zeigt, gewinnt er.
+   *   2) Automatischer Lookup: lookupAccount(chartOfAccounts, acctnumber, acctType)
+   *      — SKR-Range bzw. NS-acctType-Fallback.
+   *   3) Wenn beides leer → "nicht zugeordnet" (notmapped).
+   *
    * Eingabe:
-   *   accountRows: [{ account_id, acctnumber, acctname, accttype, balance }]
+   *   accountRows: [{ account_id, acctnumber, acctname, accttype, override_line_id, balance }]
    *   chartOfAccounts: 'skr03' | 'skr04' | 'nstype'
+   *   listMap: { idToScriptid, idToName, scriptidToId } — aus queries.getLineListMap()
    *
    * Ausgabe:
-   *   detailValues: { lineId: amount } — Aktiva positiv, Passiva positiv
-   *                                       (Vorzeichen je nach side gekehrt)
-   *   notmapped: { aktiva: amount, passiva: amount, accounts: [...] }
-   *
-   * Heuristik fuer ungelistete Konten (kein SKR-Match, kein acctType-Match):
-   *   - Positive Salden (Soll-Saldo > 0) → __unmapped_aktiva
-   *   - Negative Salden (Haben-Saldo) → __unmapped_passiva
+   *   detail: { lineId: amount } — Aktiva positiv, Passiva positiv
+   *   overridesUsed: Anzahl der Konten, bei denen der Override gegriffen hat
+   *   notmapped: { aktiva, passiva, accounts: [...] }
    */
-  const aggregate = (accountRows, chartOfAccounts) => {
+  const aggregate = (accountRows, chartOfAccounts, listMap) => {
     const detail = {};
     const notmapped = { aktiva: 0, passiva: 0, accounts: [] };
+    let overridesUsed = 0;
 
     for (const r of accountRows) {
       const balance = parseFloat(r.balance) || 0;
       if (Math.abs(balance) < 0.005) continue;
-      const lookup = lookupAccount(chartOfAccounts, r.acctnumber, r.accttype);
+
+      let lookup = null;
+      // 1) Override am Account?
+      const overrideId = r.override_line_id ? String(r.override_line_id) : '';
+      if (overrideId && listMap && listMap.idToScriptid) {
+        const sid = listMap.idToScriptid[overrideId];
+        if (sid) {
+          const line = getLineByScriptid(sid);
+          if (line) {
+            lookup = { lineId: line.id, side: line.side };
+            overridesUsed++;
+          }
+        }
+      }
+      // 2) Auto-Lookup als Fallback
+      if (!lookup) lookup = lookupAccount(chartOfAccounts, r.acctnumber, r.accttype);
+
       if (!lookup) {
         if (balance >= 0) notmapped.aktiva += balance;
         else notmapped.passiva += (-balance);
@@ -158,7 +180,7 @@ define([
       const amount = lookup.side === 'aktiva' ? balance : -balance;
       detail[lookup.lineId] = (detail[lookup.lineId] || 0) + amount;
     }
-    return { detail, notmapped };
+    return { detail, notmapped, overridesUsed };
   };
 
   /**
@@ -196,40 +218,63 @@ define([
   // HTML RENDERING
   // =========================================================================
 
-  const renderSideTable = (lines, values) => {
+  /**
+   * Rendert eine Seite (Aktiva oder Passiva) als Tabelle.
+   *
+   * Wenn `valuesPrev` uebergeben ist, bekommt jede Zeile zwei Werte-Spalten:
+   * "EUR" (aktuelle Periode) und "Vorjahr" (selbe Monatsperiode im Vorjahr).
+   * Andernfalls nur eine Spalte (Backwards-Compatibility, falls kein Vorjahr
+   * verfuegbar ist).
+   *
+   * Detail-Zeilen werden ausgeblendet, wenn BEIDE Werte (aktuell + Vorjahr)
+   * ~0 sind. So bleibt die Bilanz schlank, auch wenn ein Konto z.B. erst in
+   * diesem Jahr neu hinzugekommen ist.
+   */
+  const renderSideTable = (lines, values, valuesPrev, prevColLabel) => {
+    const hasPrev = !!valuesPrev;
+    const colCount = hasPrev ? 3 : 2;
     const rows = lines.map((ln) => {
       if (ln.type === 'section') {
-        return `<tr class="lvl-section"><td class="lbl" colspan="2">${esc(ln.label)}</td></tr>`;
+        return `<tr class="lvl-section"><td class="lbl" colspan="${colCount}">${esc(ln.label)}</td></tr>`;
       }
       if (ln.type === 'header') {
-        return `<tr class="lvl-1"><td class="lbl" colspan="2"><em style="font-style:normal;color:#6B7280;font-weight:600;">${esc(ln.label)}</em></td></tr>`;
+        return `<tr class="lvl-1"><td class="lbl" colspan="${colCount}"><em style="font-style:normal;color:#6B7280;font-weight:600;">${esc(ln.label)}</em></td></tr>`;
       }
+      const v = values[ln.id];
+      const vPrev = hasPrev ? valuesPrev[ln.id] : 0;
+      const prevCell = hasPrev ? `<td class="num prev">${fmtEur(vPrev)}</td>` : '';
       if (ln.type === 'total') {
         return `<tr class="total"><td class="lbl">${esc(ln.label)}</td>`
-          + `<td class="num">${fmtEur(values[ln.id])}</td></tr>`;
+          + `<td class="num">${fmtEur(v)}</td>${hasPrev ? `<td class="num prev">${fmtEur(vPrev)}</td>` : ''}</tr>`;
       }
       if (ln.type === 'subtotal') {
         return `<tr class="subtotal"><td class="lbl">${esc(ln.label)}</td>`
-          + `<td class="num">${fmtEur(values[ln.id])}</td></tr>`;
+          + `<td class="num">${fmtEur(v)}</td>${hasPrev ? `<td class="num prev">${fmtEur(vPrev)}</td>` : ''}</tr>`;
       }
-      // detail — verstecke Nullzeilen
-      const v = values[ln.id];
-      if (isZero(v)) return '';
+      // detail — verstecke nur, wenn BEIDE Werte ~0
+      if (isZero(v) && (!hasPrev || isZero(vPrev))) return '';
       const cls = `lvl-${Math.min(ln.level, 3)}`;
       return `<tr class="${cls}"><td class="lbl">${esc(ln.label)}</td>`
-        + `<td class="num">${fmtEur(v)}</td></tr>`;
+        + `<td class="num">${isZero(v) ? '' : fmtEur(v)}</td>`
+        + (hasPrev ? `<td class="num prev">${isZero(vPrev) ? '' : fmtEur(vPrev)}</td>` : '')
+        + '</tr>';
     }).join('');
     return `<table class="bilanz-table">
   <thead>
-    <tr><th class="lbl">Position</th><th class="num">EUR</th></tr>
+    <tr>
+      <th class="lbl">Position</th>
+      <th class="num">EUR</th>
+      ${hasPrev ? `<th class="num prev">${esc(prevColLabel || 'Vorjahr')}</th>` : ''}
+    </tr>
   </thead>
   <tbody>${rows}</tbody>
 </table>`;
   };
 
   const renderResultHtml = ({ values, aktivaTotal, passivaTotal, balanceOk, plug,
+                              valuesPrev, prevColLabel,
                               notmappedAktiva, notmappedPassiva, notmappedAccounts,
-                              chartLabel }) => {
+                              chartLabel, overridesUsed, schemaMissing }) => {
     const balanceClass = balanceOk ? 'ok' : 'fail';
     const plugLabel = isZero(plug)
       ? ''
@@ -258,20 +303,35 @@ define([
 </div>`;
     }
 
+    const schemaWarnHtml = schemaMissing
+      ? style.renderNotice({
+          variant: 'warn',
+          iconChar: '!',
+          title: 'Konto-Overrides nicht verfügbar in diesem NetSuite-Account',
+          body: 'Das Custom Field <code>custrecord_4abilanz_line</code> und/oder die Customlist <code>customlist_4abilanz_lines</code> sind in diesem Account nicht installiert. Die Bilanz arbeitet weiter mit der automatischen SKR/Account-Typ-Zuordnung — manuelle Konto-Overrides sind deaktiviert, bis das Bundle-Update eingespielt ist.',
+          steps: [
+            '<strong>Setup → Customization → Install Bundle → List Installed Bundles</strong> öffnen.',
+            '„4a Bilanz HGB" in der Liste finden und <strong>Update</strong> anklicken.',
+            'Nach dem Update diese Seite neu laden — Overrides werden automatisch aktiv.',
+          ],
+        })
+      : '';
+
     return `
 <div class="bilanz-wrap">
+  ${schemaWarnHtml}
   <div class="bilanz-grid">
     <div class="bilanz-side">
       <p class="bilanz-side-title">Aktiva</p>
-      ${renderSideTable(AKTIVA_LINES, values)}
+      ${renderSideTable(AKTIVA_LINES, values, valuesPrev, prevColLabel)}
     </div>
     <div class="bilanz-side">
       <p class="bilanz-side-title">Passiva</p>
-      ${renderSideTable(PASSIVA_LINES, values)}
+      ${renderSideTable(PASSIVA_LINES, values, valuesPrev, prevColLabel)}
     </div>
   </div>
   <div class="bilanz-balance-check ${balanceClass}">${balanceText}</div>
-  <div class="bilanz-meta"><span class="fa-dot fa-dot-orange"></span>Kontenrahmen: ${esc(chartLabel)} · Vorzeichen: Aktiva und Passiva als positive Salden. Null-Zeilen werden ausgeblendet. · Jahresergebnis wird aus der Bilanzdifferenz (Aktiva − Passiva) abgeleitet und in P.A.V eingebucht.</div>
+  <div class="bilanz-meta"><span class="fa-dot fa-dot-orange"></span>Kontenrahmen: ${esc(chartLabel)} · ${overridesUsed ? `<strong>${overridesUsed}</strong> Konto-Overrides aktiv · ` : ''}Vorzeichen: Aktiva und Passiva als positive Salden. Null-Zeilen werden ausgeblendet. · Jahresergebnis wird aus der Bilanzdifferenz (Aktiva − Passiva) abgeleitet und in P.A.V eingebucht.</div>
   ${notmappedHtml}
 </div>`;
   };
@@ -355,10 +415,36 @@ define([
     let plug = 0;
     let notmapped = { aktiva: 0, passiva: 0, accounts: [] };
 
+    let overridesUsed = 0;
+    let schemaMissing = false;
+    // --- Vorjahresvergleich ---
+    // selPrevPeriod ist die Posting-Period mit gleichem Monat in (selYear - 1).
+    // Wenn keine existiert (Mandant neu, keine Vorjahres-Buchungen), bleibt es
+    // null und die zweite Spalte wird unterdrueckt.
+    let selPrevPeriod = null;
+    const findPreviousYearPeriod = (curPeriod) => {
+      if (!curPeriod) return null;
+      const curYear = parseInt(curPeriod.year_str, 10);
+      const curMonth = parseInt(curPeriod.month_str, 10);
+      if (!curYear || !curMonth) return null;
+      for (const p of periods) {
+        if (parseInt(p.year_str, 10) === curYear - 1
+          && parseInt(p.month_str, 10) === curMonth) return p;
+      }
+      return null;
+    };
+    let valuesPrev = null;
+    let aktivaTotalPrev = 0;
+    let passivaTotalPrev = 0;
+    let plugPrev = 0;
     if (selPeriod) {
+      const listMap = queries.getLineListMap();
+      schemaMissing = !!listMap.schemaMissing;
+
       const balances = queries.getBalanceSheetBalances(selPeriod.id, effectiveBook, selSub || '');
-      const agg = aggregate(balances, chartOfAccounts);
+      const agg = aggregate(balances, chartOfAccounts, listMap);
       notmapped = agg.notmapped;
+      overridesUsed = agg.overridesUsed;
       const fin = finalizeValues(agg.detail);
       values = fin.values;
       plug = fin.plug;
@@ -368,6 +454,30 @@ define([
       // Eine verbleibende Differenz > 50 Cent wuerde auf einen Bug oder ein
       // SQL-Daten-Problem hindeuten — wir flaggen das in der UI.
       balanceOk = Math.abs(aktivaTotal - passivaTotal) < 0.5;
+
+      // Vorjahr — separate Query, separate Aggregation, separate Plug.
+      // Notmapped/overridesUsed der Vorjahres-Aggregation werfen wir bewusst
+      // weg, weil sie sich auf den Stand vor 12 Monaten beziehen und wenig
+      // diagnostischen Wert haben.
+      selPrevPeriod = findPreviousYearPeriod(selPeriod);
+      if (selPrevPeriod) {
+        try {
+          const balancesPrev = queries.getBalanceSheetBalances(selPrevPeriod.id, effectiveBook, selSub || '');
+          const aggPrev = aggregate(balancesPrev, chartOfAccounts, listMap);
+          const finPrev = finalizeValues(aggPrev.detail);
+          valuesPrev = finPrev.values;
+          plugPrev = finPrev.plug;
+          aktivaTotalPrev = valuesPrev['AKT.t'] || 0;
+          passivaTotalPrev = valuesPrev['PAS.t'] || 0;
+        } catch (e) {
+          log.error({
+            title: '4a_bilanz: Vorjahres-Aggregation fehlgeschlagen',
+            details: 'period=' + selPrevPeriod.id + ' err=' + (e.message || String(e)),
+          });
+          valuesPrev = null;
+          selPrevPeriod = null;
+        }
+      }
     }
 
     // -----------------------------------------------------------------------
@@ -386,6 +496,8 @@ define([
         aktivaLines: AKTIVA_LINES, passivaLines: PASSIVA_LINES, values,
         aktivaTotal, passivaTotal, balanceOk,
         notmappedAktiva: notmapped.aktiva, notmappedPassiva: notmapped.passiva,
+        valuesPrev,
+        prevColLabel: selPrevPeriod ? `Vorjahr (${selPrevPeriod.enddate_str})` : 'Vorjahr',
       };
 
       const safeMonth = String(selPeriod.month_str).padStart(2, '0');
@@ -532,8 +644,11 @@ define([
     htmlField.defaultValue = selPeriod
       ? renderResultHtml({
           values, aktivaTotal, passivaTotal, balanceOk, plug,
+          valuesPrev,
+          prevColLabel: selPrevPeriod ? `Vorjahr (${selPrevPeriod.enddate_str})` : 'Vorjahr',
           notmappedAktiva: notmapped.aktiva, notmappedPassiva: notmapped.passiva,
           notmappedAccounts: notmapped.accounts, chartLabel,
+          overridesUsed, schemaMissing,
         })
       : '<div class="bilanz-wrap"><div class="fa-card"><p>Bitte Periode auswählen.</p></div></div>';
     htmlField.updateLayoutType({ layoutType: serverWidget.FieldLayoutType.OUTSIDEBELOW });

@@ -23,12 +23,21 @@
  *   Soll-Salden (Aktiva) sind positiv, Haben-Salden (Passiva) sind negativ.
  *   Das Suitelet negiert Passiva-Werte, sodass beide Seiten positiv erscheinen.
  */
-define(['N/query'], (query) => {
+define(['N/query', 'N/log'], (query, log) => {
 
   const runSql = (sql, params) => {
     const opts = { query: sql };
     if (params && params.length) opts.params = params;
     return query.runSuiteQL(opts).asMappedResults();
+  };
+
+  // True, wenn der Fehler "Field 'custrecord_4abilanz_line' ... not found"
+  // kommt — bedeutet, dass das Override-Custom-Field beim Kunden noch nicht
+  // installiert ist (Bundle-Update steht aus).
+  const isOverrideSchemaMissing = (e) => {
+    const msg = String((e && e.message) || '');
+    return msg.indexOf('custrecord_4abilanz_line') !== -1
+      || msg.indexOf('customlist_4abilanz_lines') !== -1;
   };
 
   /**
@@ -108,11 +117,17 @@ define(['N/query'], (query) => {
         )`;
       params.push(String(subsidiaryId));
     }
-    return runSql(`
+    // Erster Versuch: Query MIT Override-Spalte. Faellt das mit "Field not
+    // found" durch, ist das Bundle beim Kunden noch nicht komplett — wir
+    // fallen auf eine Query OHNE Override zurueck und liefern override_line_id
+    // immer als leer. Die Bilanz funktioniert dann wie vor dem Override-
+    // Feature (reines SKR/acctType-Mapping).
+    const buildSelect = (withOverride) => `
       SELECT a.id              AS account_id,
              NVL(a.acctnumber, '') AS acctnumber,
              a.accountsearchdisplaynamecopy AS acctname,
              a.accttype        AS accttype,
+             ${withOverride ? 'a.custrecord_4abilanz_line AS override_line_id,' : "'' AS override_line_id,"}
              SUM(NVL(tal.debit, 0) - NVL(tal.credit, 0)) AS balance
       FROM transactionaccountingline tal
       INNER JOIN transaction t ON t.id = tal.transaction
@@ -125,8 +140,61 @@ define(['N/query'], (query) => {
         AND a.accttype IN (${acctTypeList})
         AND pTx.startdate <= pEnd.enddate
         ${subClause}
-      GROUP BY a.id, NVL(a.acctnumber, ''), a.accountsearchdisplaynamecopy, a.accttype
-    `, params);
+      GROUP BY a.id, NVL(a.acctnumber, ''), a.accountsearchdisplaynamecopy, a.accttype${withOverride ? ', a.custrecord_4abilanz_line' : ''}
+    `;
+    try {
+      return runSql(buildSelect(true), params);
+    } catch (e) {
+      if (isOverrideSchemaMissing(e)) {
+        log.audit({
+          title: '4a_bilanz: Override-Schema fehlt — Fallback auf Query ohne custrecord_4abilanz_line',
+          details: 'Bitte Bundle-Update einspielen, damit Konto-Overrides greifen.',
+        });
+        return runSql(buildSelect(false), params);
+      }
+      throw e;
+    }
+  };
+
+  /**
+   * Liest die customlist_4abilanz_lines live aus NetSuite und liefert eine
+   * Mapping-Tabelle:
+   *   { idToScriptid: { '12345': 'val_a_ii_3', … },
+   *     scriptidToId: { 'val_a_ii_3': '12345', … },
+   *     idToName:     { '12345': 'A.II.3 BGA / Andere Anlagen', … } }
+   * Das ist noetig, weil das custrecord-Feld am Account die *interne ID* des
+   * Customvalues speichert (numerisch). Erst ueber die scriptid kommen wir
+   * zurueck zur stabilen Code-ID in 4a_bilanz_config.js.
+   */
+  const getLineListMap = () => {
+    let rows;
+    try {
+      rows = runSql(`
+        SELECT id, scriptid, name
+        FROM customlist_4abilanz_lines
+        WHERE isinactive = 'F'
+      `);
+    } catch (e) {
+      if (isOverrideSchemaMissing(e)) {
+        log.audit({
+          title: '4a_bilanz: customlist_4abilanz_lines fehlt — leerer ListMap',
+          details: 'Bitte Bundle-Update einspielen.',
+        });
+        return { idToScriptid: {}, scriptidToId: {}, idToName: {}, schemaMissing: true };
+      }
+      throw e;
+    }
+    const idToScriptid = {};
+    const scriptidToId = {};
+    const idToName = {};
+    for (const r of rows) {
+      const id = String(r.id);
+      const sid = String(r.scriptid || '').toLowerCase();
+      idToScriptid[id] = sid;
+      scriptidToId[sid] = id;
+      idToName[id] = r.name;
+    }
+    return { idToScriptid, scriptidToId, idToName, schemaMissing: false };
   };
 
   /**
@@ -185,5 +253,6 @@ define(['N/query'], (query) => {
     getAccountingBooks,
     getBalanceSheetBalances,
     getCurrentFyNetIncome,
+    getLineListMap,
   };
 });
