@@ -32,32 +32,76 @@ define(['./4a_bilanz_style', './4a_bilanz_config'], (style, config) => {
   };
 
   /**
-   * Eine Seite (Aktiva oder Passiva) als 2- (ohne Vorjahr) bzw. 3-spaltige
-   * Zellenliste je <tr>. Header/Section: colspan ueber alle Daten-Spalten.
+   * Eine Seite (Aktiva oder Passiva) als <tr>-Liste. Total wird separat
+   * gehalten, damit der Caller mit Filler-Rows vor dem Total auf gleiche
+   * Hoehe wie die andere Seite padden kann.
+   *
+   * Returns: { rowsBeforeTotal: [<tr>...], totalRow: <tr>..., colspan }
    */
   const sideRowsHtml = (lines, values, valuesPrev) => {
     const hasPrev = !!valuesPrev;
     const colspan = hasPrev ? 3 : 2;
-    return lines.map((ln) => {
+    const rowsBeforeTotal = [];
+    let totalRow = '';
+    for (const ln of lines) {
       if (ln.type === 'header' || ln.type === 'section') {
         const cls = ln.type === 'section' ? 'section' : 'subhdr';
-        return `<tr class="${cls}"><td colspan="${colspan}" style="font-weight:bold;">${esc(ln.label)}</td></tr>`;
+        rowsBeforeTotal.push(`<tr class="${cls}"><td colspan="${colspan}" style="font-weight:bold;">${esc(ln.label)}</td></tr>`);
+        continue;
       }
       const v = values[ln.id];
       const vPrev = hasPrev ? valuesPrev[ln.id] : 0;
       if (ln.type === 'total') {
-        return `<tr class="total" style="background-color:#E85D04;color:#fff;font-weight:bold;">`
+        totalRow = `<tr class="total" style="background-color:#E85D04;color:#fff;font-weight:bold;">`
           + `<td>${esc(ln.label)}</td>${numCell(v, NUM_STYLE + ' color:#fff;')}${hasPrev ? numCell(vPrev, NUM_STYLE + ' color:#fff;') : ''}</tr>`;
+        continue;
       }
       if (ln.type === 'subtotal') {
-        return `<tr class="subtotal" style="background-color:#FFF4ED;font-weight:bold;">`
-          + `<td>${esc(ln.label)}</td>${numCell(v, NUM_STYLE)}${hasPrev ? numCell(vPrev, NUM_STYLE) : ''}</tr>`;
+        rowsBeforeTotal.push(`<tr class="subtotal" style="background-color:#FFF4ED;font-weight:bold;">`
+          + `<td>${esc(ln.label)}</td>${numCell(v, NUM_STYLE)}${hasPrev ? numCell(vPrev, NUM_STYLE) : ''}</tr>`);
+        continue;
       }
       // detail — hide row only if BOTH are zero
-      if (isZero(v) && (!hasPrev || isZero(vPrev))) return '';
+      if (isZero(v) && (!hasPrev || isZero(vPrev))) continue;
       const indent = ln.level >= 2 ? ' style="mso-char-indent-count:2;"' : '';
-      return `<tr><td${indent}>${esc(ln.label)}</td>${numCell(v, NUM_STYLE)}${hasPrev ? numCell(vPrev, PREV_STYLE) : ''}</tr>`;
-    }).join('');
+      rowsBeforeTotal.push(`<tr><td${indent}>${esc(ln.label)}</td>${numCell(v, NUM_STYLE)}${hasPrev ? numCell(vPrev, PREV_STYLE) : ''}</tr>`);
+    }
+    return { rowsBeforeTotal, totalRow, colspan };
+  };
+
+  // Padding-Helfer fuer XLSX: liefert N leere <tr>-Zeilen mit der passenden
+  // Anzahl <td>-Zellen.
+  const buildFillerRows = (count, colspan) => {
+    if (!count || count <= 0) return [];
+    // &#160; in jeder Zelle — leere <td>s kollabieren in Excel zu 0-Hoehe,
+    // dann waeren die Aktiva/Passiva-Totals trotz Filler nicht auf gleicher Excel-Zeile.
+    const cells = '<td>&#160;</td>'.repeat(colspan);
+    return new Array(count).fill(`<tr class="filler">${cells}</tr>`);
+  };
+
+  // Verteilt Filler-Rows VOR jeder Section (ausser der ersten), damit der
+  // leere Raum auf der kuerzeren Seite wie Spacing aussieht und nicht wie
+  // ein Block am Ende.
+  const distributeFillers = (rowsBeforeTotal, target, colspan) => {
+    const need = target - rowsBeforeTotal.length;
+    if (need <= 0) return rowsBeforeTotal.slice();
+    const fillerRow = `<tr class="filler">${'<td>&#160;</td>'.repeat(colspan)}</tr>`;
+    const out = rowsBeforeTotal.slice();
+    const sectionStarts = [];
+    for (let i = 0; i < out.length; i++) {
+      if (out[i].indexOf('class="section"') !== -1) sectionStarts.push(i);
+    }
+    const gaps = sectionStarts.slice(1);
+    if (gaps.length > 0) {
+      const perGap = Math.floor(need / gaps.length);
+      const remainder = need - perGap * gaps.length;
+      for (let g = gaps.length - 1; g >= 0; g--) {
+        const count = perGap + (g >= gaps.length - remainder ? 1 : 0);
+        for (let f = 0; f < count; f++) out.splice(gaps[g], 0, fillerRow);
+      }
+    }
+    while (out.length < target) out.push(fillerRow);
+    return out;
   };
 
   const renderXlsxHtml = ({ company, subsidiaryLabel, periodLabel, chartLabel,
@@ -70,8 +114,17 @@ define(['./4a_bilanz_style', './4a_bilanz_config'], (style, config) => {
     const colsPerSide = hasPrev ? 3 : 2;
     const totalCols = colsPerSide * 2 + 1; // links + spacer + rechts
 
-    const aktivaRows = sideRowsHtml(aktivaLines, values, valuesPrev);
-    const passivaRows = sideRowsHtml(passivaLines, values, valuesPrev);
+    const aktivaSide = sideRowsHtml(aktivaLines, values, valuesPrev);
+    const passivaSide = sideRowsHtml(passivaLines, values, valuesPrev);
+
+    // Auf gleiche Hoehe padden, sodass die "Summe AKTIVA"- und
+    // "Summe PASSIVA"-Zeilen nach dem Side-by-Side-Merge in derselben
+    // Excel-Zeile liegen. Filler werden zwischen die Sections verteilt.
+    const target = Math.max(aktivaSide.rowsBeforeTotal.length, passivaSide.rowsBeforeTotal.length);
+    const aktivaPadded = distributeFillers(aktivaSide.rowsBeforeTotal, target, colsPerSide);
+    const passivaPadded = distributeFillers(passivaSide.rowsBeforeTotal, target, colsPerSide);
+    const aktivaRows = aktivaPadded.join('') + aktivaSide.totalRow;
+    const passivaRows = passivaPadded.join('') + passivaSide.totalRow;
 
     const reportTitle = `Bilanz HGB · ${periodLabel}`;
     const metaParts = [subsidiaryLabel, `Kontenrahmen: ${chartLabel}`].filter(Boolean);

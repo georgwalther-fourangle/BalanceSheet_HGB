@@ -223,43 +223,90 @@ define([
    *
    * Wenn `valuesPrev` uebergeben ist, bekommt jede Zeile zwei Werte-Spalten:
    * "EUR" (aktuelle Periode) und "Vorjahr" (selbe Monatsperiode im Vorjahr).
-   * Andernfalls nur eine Spalte (Backwards-Compatibility, falls kein Vorjahr
-   * verfuegbar ist).
+   * Andernfalls nur eine Spalte.
    *
    * Detail-Zeilen werden ausgeblendet, wenn BEIDE Werte (aktuell + Vorjahr)
-   * ~0 sind. So bleibt die Bilanz schlank, auch wenn ein Konto z.B. erst in
-   * diesem Jahr neu hinzugekommen ist.
+   * ~0 sind.
+   *
+   * `padToBodyRows` (optional): falls gesetzt, wird vor dem Total mit leeren
+   * <tr class="filler">-Zeilen aufgefuellt, bis die Tabelle insgesamt mind.
+   * so viele Body-Rows hat. Damit lassen sich Aktiva und Passiva visuell
+   * gleichlang machen, sodass die "Summe AKTIVA" und "Summe PASSIVA"-Zeilen
+   * auf derselben Hoehe sitzen.
+   *
+   * Returns: { html, bodyRowCount } — der Aufrufer braucht den Count fuer
+   *   die zweite Render-Runde mit padToBodyRows.
    */
-  const renderSideTable = (lines, values, valuesPrev, prevColLabel) => {
+  const renderSideTable = (lines, values, valuesPrev, prevColLabel, padToBodyRows) => {
     const hasPrev = !!valuesPrev;
     const colCount = hasPrev ? 3 : 2;
-    const rows = lines.map((ln) => {
+    const rowsBeforeTotal = [];
+    let totalRow = '';
+    for (const ln of lines) {
       if (ln.type === 'section') {
-        return `<tr class="lvl-section"><td class="lbl" colspan="${colCount}">${esc(ln.label)}</td></tr>`;
+        rowsBeforeTotal.push(`<tr class="lvl-section"><td class="lbl" colspan="${colCount}">${esc(ln.label)}</td></tr>`);
+        continue;
       }
       if (ln.type === 'header') {
-        return `<tr class="lvl-1"><td class="lbl" colspan="${colCount}"><em style="font-style:normal;color:#6B7280;font-weight:600;">${esc(ln.label)}</em></td></tr>`;
+        rowsBeforeTotal.push(`<tr class="lvl-1"><td class="lbl" colspan="${colCount}"><em style="font-style:normal;color:#6B7280;font-weight:600;">${esc(ln.label)}</em></td></tr>`);
+        continue;
       }
       const v = values[ln.id];
       const vPrev = hasPrev ? valuesPrev[ln.id] : 0;
-      const prevCell = hasPrev ? `<td class="num prev">${fmtEur(vPrev)}</td>` : '';
       if (ln.type === 'total') {
-        return `<tr class="total"><td class="lbl">${esc(ln.label)}</td>`
+        totalRow = `<tr class="total"><td class="lbl">${esc(ln.label)}</td>`
           + `<td class="num">${fmtEur(v)}</td>${hasPrev ? `<td class="num prev">${fmtEur(vPrev)}</td>` : ''}</tr>`;
+        continue;
       }
       if (ln.type === 'subtotal') {
-        return `<tr class="subtotal"><td class="lbl">${esc(ln.label)}</td>`
-          + `<td class="num">${fmtEur(v)}</td>${hasPrev ? `<td class="num prev">${fmtEur(vPrev)}</td>` : ''}</tr>`;
+        rowsBeforeTotal.push(`<tr class="subtotal"><td class="lbl">${esc(ln.label)}</td>`
+          + `<td class="num">${fmtEur(v)}</td>${hasPrev ? `<td class="num prev">${fmtEur(vPrev)}</td>` : ''}</tr>`);
+        continue;
       }
       // detail — verstecke nur, wenn BEIDE Werte ~0
-      if (isZero(v) && (!hasPrev || isZero(vPrev))) return '';
+      if (isZero(v) && (!hasPrev || isZero(vPrev))) continue;
       const cls = `lvl-${Math.min(ln.level, 3)}`;
-      return `<tr class="${cls}"><td class="lbl">${esc(ln.label)}</td>`
+      rowsBeforeTotal.push(`<tr class="${cls}"><td class="lbl">${esc(ln.label)}</td>`
         + `<td class="num">${isZero(v) ? '' : fmtEur(v)}</td>`
         + (hasPrev ? `<td class="num prev">${isZero(vPrev) ? '' : fmtEur(vPrev)}</td>` : '')
-        + '</tr>';
-    }).join('');
-    return `<table class="bilanz-table">
+        + '</tr>');
+    }
+
+    // Padding zum Hoehenausgleich. Statt alle Filler-Zeilen ans Ende zu haengen
+    // (was wie ein "leerer Block vor dem Total" aussieht), verteilen wir sie
+    // VOR jeden Section-Start (ausser dem ersten). So bekommen die Section-
+    // Bloecke der kuerzeren Seite mehr Abstand zueinander und der Vacuum-Look
+    // verschwindet.
+    if (padToBodyRows && rowsBeforeTotal.length < padToBodyRows) {
+      const fillerCell = hasPrev
+        ? '<td class="lbl">&nbsp;</td><td class="num">&nbsp;</td><td class="num prev">&nbsp;</td>'
+        : '<td class="lbl">&nbsp;</td><td class="num">&nbsp;</td>';
+      const fillerRow = `<tr class="filler">${fillerCell}</tr>`;
+      // Section-Start-Positionen finden (alle Sections nach der ersten).
+      const sectionStarts = [];
+      for (let i = 0; i < rowsBeforeTotal.length; i++) {
+        if (rowsBeforeTotal[i].indexOf('class="lvl-section"') !== -1) sectionStarts.push(i);
+      }
+      const gaps = sectionStarts.slice(1); // erste Section bleibt am Top-of-Card
+      let need = padToBodyRows - rowsBeforeTotal.length;
+      if (gaps.length > 0) {
+        const perGap = Math.floor(need / gaps.length);
+        const remainder = need - perGap * gaps.length;
+        // Von hinten nach vorne einfuegen, damit die `gaps`-Indizes stabil
+        // bleiben. Den Rest (remainder) packen wir auf die hinteren Sections,
+        // damit der visuelle "Schwerpunkt" der Bilanz oben bleibt.
+        for (let g = gaps.length - 1; g >= 0; g--) {
+          const count = perGap + (g >= gaps.length - remainder ? 1 : 0);
+          for (let f = 0; f < count; f++) rowsBeforeTotal.splice(gaps[g], 0, fillerRow);
+          need -= count;
+        }
+      }
+      // Restliche Filler (falls nur eine Section existiert) am Ende
+      while (rowsBeforeTotal.length < padToBodyRows) rowsBeforeTotal.push(fillerRow);
+    }
+
+    const bodyRowCount = rowsBeforeTotal.length + (totalRow ? 1 : 0);
+    const html = `<table class="bilanz-table">
   <thead>
     <tr>
       <th class="lbl">Position</th>
@@ -267,8 +314,9 @@ define([
       ${hasPrev ? `<th class="num prev">${esc(prevColLabel || 'Vorjahr')}</th>` : ''}
     </tr>
   </thead>
-  <tbody>${rows}</tbody>
+  <tbody>${rowsBeforeTotal.join('')}${totalRow}</tbody>
 </table>`;
+    return { html, bodyRowCount, rowsBeforeTotalCount: rowsBeforeTotal.length };
   };
 
   const renderResultHtml = ({ values, aktivaTotal, passivaTotal, balanceOk, plug,
@@ -317,17 +365,27 @@ define([
         })
       : '';
 
+    // Zwei-Pass-Render: erst beide Seiten ohne Padding rendern, um zu
+    // messen, wie viele Body-Rows jede Seite hat. Dann mit der groesseren
+    // Anzahl als padToBodyRows neu rendern → Summe-Zeilen liegen auf
+    // gleicher Hoehe.
+    const a0 = renderSideTable(AKTIVA_LINES, values, valuesPrev, prevColLabel);
+    const p0 = renderSideTable(PASSIVA_LINES, values, valuesPrev, prevColLabel);
+    const targetRowsBeforeTotal = Math.max(a0.rowsBeforeTotalCount, p0.rowsBeforeTotalCount);
+    const aktivaTbl = renderSideTable(AKTIVA_LINES, values, valuesPrev, prevColLabel, targetRowsBeforeTotal).html;
+    const passivaTbl = renderSideTable(PASSIVA_LINES, values, valuesPrev, prevColLabel, targetRowsBeforeTotal).html;
+
     return `
 <div class="bilanz-wrap">
   ${schemaWarnHtml}
   <div class="bilanz-grid">
     <div class="bilanz-side">
       <p class="bilanz-side-title">Aktiva</p>
-      ${renderSideTable(AKTIVA_LINES, values, valuesPrev, prevColLabel)}
+      ${aktivaTbl}
     </div>
     <div class="bilanz-side">
       <p class="bilanz-side-title">Passiva</p>
-      ${renderSideTable(PASSIVA_LINES, values, valuesPrev, prevColLabel)}
+      ${passivaTbl}
     </div>
   </div>
   <div class="bilanz-balance-check ${balanceClass}">${balanceText}</div>

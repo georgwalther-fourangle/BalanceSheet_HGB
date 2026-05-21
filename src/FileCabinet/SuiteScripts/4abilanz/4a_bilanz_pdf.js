@@ -16,40 +16,66 @@ define(['./4a_bilanz_style', './4a_bilanz_config'], (style, config) => {
 
   const { esc, fmtEur, isZero, stripInvalidXml } = style;
 
-  const renderSideTable = (lines, values, blank, valuesPrev, prevColLabel) => {
+  const renderSideTable = (lines, values, blank, valuesPrev, prevColLabel, padToBodyRows) => {
     const hasPrev = !!valuesPrev;
     const colCount = hasPrev ? 3 : 2;
-    const rows = lines.map((ln) => {
+    const rowsBeforeTotal = [];
+    let totalRow = '';
+    for (const ln of lines) {
       if (ln.type === 'header' || ln.type === 'section') {
         const cls = ln.type === 'section' ? 'section' : 'header';
-        return `<tr class="${cls}"><td class="lbl" colspan="${colCount}">${esc(stripInvalidXml(ln.label))}</td></tr>`;
+        rowsBeforeTotal.push(`<tr class="${cls}"><td class="lbl" colspan="${colCount}">${esc(stripInvalidXml(ln.label))}</td></tr>`);
+        continue;
       }
       const v = values[ln.id];
       const vPrev = hasPrev ? valuesPrev[ln.id] : 0;
-      const prevCell = hasPrev
-        ? `<td class="num prev" align="right">${blank || isZero(vPrev) ? '' : fmtEur(vPrev)}</td>`
-        : '';
       if (ln.type === 'total') {
-        return `<tr class="total"><td class="lbl">${esc(stripInvalidXml(ln.label))}</td>`
+        totalRow = `<tr class="total"><td class="lbl">${esc(stripInvalidXml(ln.label))}</td>`
           + `<td class="num" align="right">${blank ? '' : fmtEur(v)}</td>`
           + (hasPrev ? `<td class="num prev" align="right">${blank ? '' : fmtEur(vPrev)}</td>` : '')
           + '</tr>';
+        continue;
       }
       if (ln.type === 'subtotal') {
-        return `<tr class="subtotal"><td class="lbl">${esc(stripInvalidXml(ln.label))}</td>`
+        rowsBeforeTotal.push(`<tr class="subtotal"><td class="lbl">${esc(stripInvalidXml(ln.label))}</td>`
           + `<td class="num" align="right">${blank ? '' : fmtEur(v)}</td>`
           + (hasPrev ? `<td class="num prev" align="right">${blank ? '' : fmtEur(vPrev)}</td>` : '')
-          + '</tr>';
+          + '</tr>');
+        continue;
       }
       // detail — hide row only if BOTH current and prev are zero
-      if (isZero(v) && (!hasPrev || isZero(vPrev))) return '';
+      if (isZero(v) && (!hasPrev || isZero(vPrev))) continue;
       const indent = ln.level >= 2 ? ' indent' : '';
-      return `<tr class="detail${indent}"><td class="lbl">${esc(stripInvalidXml(ln.label))}</td>`
+      rowsBeforeTotal.push(`<tr class="detail${indent}"><td class="lbl">${esc(stripInvalidXml(ln.label))}</td>`
         + `<td class="num" align="right">${isZero(v) ? '' : fmtEur(v)}</td>`
         + (hasPrev ? `<td class="num prev" align="right">${isZero(vPrev) ? '' : fmtEur(vPrev)}</td>` : '')
-        + '</tr>';
-    }).join('');
-    return `<table>
+        + '</tr>');
+    }
+    // Padding zum Hoehenausgleich. Filler-Zeilen werden VOR jede Section
+    // (ausser der ersten) verteilt, damit der leere Raum wie Spacing
+    // zwischen Bloecken aussieht statt wie abgehackt-leer am Ende.
+    if (padToBodyRows && rowsBeforeTotal.length < padToBodyRows) {
+      const fillerCell = hasPrev
+        ? '<td class="lbl">&#160;</td><td class="num">&#160;</td><td class="num prev">&#160;</td>'
+        : '<td class="lbl">&#160;</td><td class="num">&#160;</td>';
+      const fillerRow = `<tr class="filler">${fillerCell}</tr>`;
+      const sectionStarts = [];
+      for (let i = 0; i < rowsBeforeTotal.length; i++) {
+        if (rowsBeforeTotal[i].indexOf('class="section"') !== -1) sectionStarts.push(i);
+      }
+      const gaps = sectionStarts.slice(1);
+      let need = padToBodyRows - rowsBeforeTotal.length;
+      if (gaps.length > 0) {
+        const perGap = Math.floor(need / gaps.length);
+        const remainder = need - perGap * gaps.length;
+        for (let g = gaps.length - 1; g >= 0; g--) {
+          const count = perGap + (g >= gaps.length - remainder ? 1 : 0);
+          for (let f = 0; f < count; f++) rowsBeforeTotal.splice(gaps[g], 0, fillerRow);
+        }
+      }
+      while (rowsBeforeTotal.length < padToBodyRows) rowsBeforeTotal.push(fillerRow);
+    }
+    const html = `<table>
   <thead>
     <tr>
       <th class="lbl">Position</th>
@@ -57,8 +83,9 @@ define(['./4a_bilanz_style', './4a_bilanz_config'], (style, config) => {
       ${hasPrev ? `<th class="num prev" align="right">${esc(stripInvalidXml(prevColLabel || 'Vorjahr'))}</th>` : ''}
     </tr>
   </thead>
-  <tbody>${rows}</tbody>
+  <tbody>${rowsBeforeTotal.join('')}${totalRow}</tbody>
 </table>`;
+    return { html, rowsBeforeTotalCount: rowsBeforeTotal.length };
   };
 
   const renderPdfXml = ({ company, subsidiaryLabel, periodLabel, chartLabel,
@@ -70,8 +97,12 @@ define(['./4a_bilanz_style', './4a_bilanz_config'], (style, config) => {
     const aktivaBlank = isZero(aktivaTotal) && aktivaLines.every((l) => l.type !== 'detail' || isZero(values[l.id]));
     const passivaBlank = isZero(passivaTotal) && passivaLines.every((l) => l.type !== 'detail' || isZero(values[l.id]));
 
-    const aktivaHtml = renderSideTable(aktivaLines, values, aktivaBlank, valuesPrev, prevColLabel);
-    const passivaHtml = renderSideTable(passivaLines, values, passivaBlank, valuesPrev, prevColLabel);
+    // Zwei-Pass: erst messen, dann mit max-Count gepadded re-rendern
+    const a0 = renderSideTable(aktivaLines, values, aktivaBlank, valuesPrev, prevColLabel);
+    const p0 = renderSideTable(passivaLines, values, passivaBlank, valuesPrev, prevColLabel);
+    const target = Math.max(a0.rowsBeforeTotalCount, p0.rowsBeforeTotalCount);
+    const aktivaHtml = renderSideTable(aktivaLines, values, aktivaBlank, valuesPrev, prevColLabel, target).html;
+    const passivaHtml = renderSideTable(passivaLines, values, passivaBlank, valuesPrev, prevColLabel, target).html;
 
     const notmappedHtml = (!isZero(notmappedAktiva) || !isZero(notmappedPassiva))
       ? `<p class="warn">⚠ Nicht zugeordnete Salden — Aktiva: ${esc(fmtEur(notmappedAktiva))} EUR, Passiva: ${esc(fmtEur(notmappedPassiva))} EUR. Bitte Kontenrahmen pruefen.</p>`
@@ -123,6 +154,7 @@ define(['./4a_bilanz_style', './4a_bilanz_config'], (style, config) => {
   th.prev, td.prev { color: #6B7280; border-left: 0.5pt solid #C7C7C7; padding-left: 6pt; }
   tr.total td.prev    { color: #fff; }
   tr.subtotal td.prev { color: #1F2937; }
+  tr.filler td { border-bottom: 0; padding: 1pt 4pt; }
   .side-title { color: #E85D04; font-size: 8pt; font-weight: bold;
                 text-transform: uppercase; letter-spacing: 0.05em;
                 border-bottom: 1pt solid #E85D04; padding-bottom: 3pt; margin-bottom: 4pt; }
