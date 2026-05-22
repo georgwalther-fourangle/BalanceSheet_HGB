@@ -17,6 +17,7 @@
       <status>RELEASED</status>
       <title>4a Bilanz HGB</title>
       <custscript_4abilanz_chartofaccounts>skr03</custscript_4abilanz_chartofaccounts>
+      <custscript_4abilanz_chartlayout>lean</custscript_4abilanz_chartlayout>
     </scriptdeployment>
   </scriptdeployments>
   <scriptcustomfields>
@@ -32,6 +33,20 @@
       <isformula>F</isformula>
       <ismandatory>F</ismandatory>
       <label>Kontenrahmen</label>
+      <storevalue>T</storevalue>
+    </scriptcustomfield>
+    <scriptcustomfield scriptid="custscript_4abilanz_chartlayout">
+      <accesslevel>2</accesslevel>
+      <applyformatting>F</applyformatting>
+      <checkspelling>F</checkspelling>
+      <defaultchecked>F</defaultchecked>
+      <defaultvalue>lean</defaultvalue>
+      <description>Bilanz-Struktur-Variante: voll (§266 vollständig) | lean (schlanke GRITSpot-aehnliche Struktur).</description>
+      <displaytype>NORMAL</displaytype>
+      <fieldtype>TEXT</fieldtype>
+      <isformula>F</isformula>
+      <ismandatory>F</ismandatory>
+      <label>Bilanz-Struktur</label>
       <storevalue>T</storevalue>
     </scriptcustomfield>
   </scriptcustomfields>

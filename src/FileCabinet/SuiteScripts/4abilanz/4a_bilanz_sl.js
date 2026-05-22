@@ -109,8 +109,10 @@ define([
   // HELPERS
   // =========================================================================
   const { esc, fmtEur, isZero } = style;
-  const { aktiva: AKTIVA_LINES, passiva: PASSIVA_LINES, allLines: ALL_LINES,
-          lookupAccount, computeValues, getLineByScriptid } = config;
+  // Hinweis: AKTIVA_LINES/PASSIVA_LINES/lookupAccount/computeValues/
+  // getLineByScriptid kommen jetzt PRO REQUEST aus config.resolve(variant),
+  // weil das Bilanz-Layout (voll vs. lean) per Deployment-Param waehlbar ist.
+  // Module-Level-Destructure wuerde immer voll laden.
 
   const MONTHS_DE = ['','Januar','Februar','März','April','Mai','Juni','Juli','August','September','Oktober','November','Dezember'];
 
@@ -120,6 +122,15 @@ define([
     const v = String(runtime.getCurrentScript().getParameter({ name: 'custscript_4abilanz_chartofaccounts' }) || '').toLowerCase();
     if (v === 'skr03' || v === 'skr04' || v === 'nstype') return v;
     return 'skr04';
+  };
+
+  const getChartLayout = () => {
+    const v = String(runtime.getCurrentScript().getParameter({ name: 'custscript_4abilanz_chartlayout' }) || '').toLowerCase();
+    if (v === 'voll' || v === 'hgb_voll') return 'voll';
+    // Default ist 'lean' — schlanke GRITSpot-Struktur. Wir liefern aktuell
+    // nur diese Variante als Default aus; voll kann pro Deployment manuell
+    // umgestellt werden, falls ein Kunde die volle §266-Gliederung will.
+    return 'lean';
   };
 
   /**
@@ -143,7 +154,8 @@ define([
    *   overridesUsed: Anzahl der Konten, bei denen der Override gegriffen hat
    *   notmapped: { aktiva, passiva, accounts: [...] }
    */
-  const aggregate = (accountRows, chartOfAccounts, listMap) => {
+  const aggregate = (accountRows, chartOfAccounts, listMap, variant) => {
+    const { lookupAccount, getLineByScriptid } = variant;
     const detail = {};
     const notmapped = { aktiva: 0, passiva: 0, accounts: [] };
     let overridesUsed = 0;
@@ -203,15 +215,16 @@ define([
    * Toleranz: bei |plug| < 0,005 EUR (reine Rundungsdifferenz) wird nichts
    * gebucht — die Bilanz gilt als ausgeglichen.
    */
-  const finalizeValues = (detailValues) => {
-    const v0 = computeValues(ALL_LINES, detailValues);
+  const finalizeValues = (detailValues, variant) => {
+    const { computeValues, allLines, plugLineId } = variant;
+    const v0 = computeValues(allLines, detailValues);
     const aktivaT = v0['AKT.t'] || 0;
     const passivaT = v0['PAS.t'] || 0;
     const plug = aktivaT - passivaT;
     if (Math.abs(plug) >= 0.005) {
-      detailValues['P.A.V'] = (detailValues['P.A.V'] || 0) + plug;
+      detailValues[plugLineId] = (detailValues[plugLineId] || 0) + plug;
     }
-    return { values: computeValues(ALL_LINES, detailValues), plug };
+    return { values: computeValues(allLines, detailValues), plug };
   };
 
   // =========================================================================
@@ -322,7 +335,8 @@ define([
   const renderResultHtml = ({ values, aktivaTotal, passivaTotal, balanceOk, plug,
                               valuesPrev, prevColLabel,
                               notmappedAktiva, notmappedPassiva, notmappedAccounts,
-                              chartLabel, overridesUsed, schemaMissing }) => {
+                              chartLabel, overridesUsed, schemaMissing,
+                              aktivaLines, passivaLines, layoutLabel }) => {
     const balanceClass = balanceOk ? 'ok' : 'fail';
     const plugLabel = isZero(plug)
       ? ''
@@ -369,11 +383,11 @@ define([
     // messen, wie viele Body-Rows jede Seite hat. Dann mit der groesseren
     // Anzahl als padToBodyRows neu rendern → Summe-Zeilen liegen auf
     // gleicher Hoehe.
-    const a0 = renderSideTable(AKTIVA_LINES, values, valuesPrev, prevColLabel);
-    const p0 = renderSideTable(PASSIVA_LINES, values, valuesPrev, prevColLabel);
+    const a0 = renderSideTable(aktivaLines, values, valuesPrev, prevColLabel);
+    const p0 = renderSideTable(passivaLines, values, valuesPrev, prevColLabel);
     const targetRowsBeforeTotal = Math.max(a0.rowsBeforeTotalCount, p0.rowsBeforeTotalCount);
-    const aktivaTbl = renderSideTable(AKTIVA_LINES, values, valuesPrev, prevColLabel, targetRowsBeforeTotal).html;
-    const passivaTbl = renderSideTable(PASSIVA_LINES, values, valuesPrev, prevColLabel, targetRowsBeforeTotal).html;
+    const aktivaTbl = renderSideTable(aktivaLines, values, valuesPrev, prevColLabel, targetRowsBeforeTotal).html;
+    const passivaTbl = renderSideTable(passivaLines, values, valuesPrev, prevColLabel, targetRowsBeforeTotal).html;
 
     return `
 <div class="bilanz-wrap">
@@ -389,7 +403,7 @@ define([
     </div>
   </div>
   <div class="bilanz-balance-check ${balanceClass}">${balanceText}</div>
-  <div class="bilanz-meta"><span class="fa-dot fa-dot-orange"></span>Kontenrahmen: ${esc(chartLabel)} · ${overridesUsed ? `<strong>${overridesUsed}</strong> Konto-Overrides aktiv · ` : ''}Vorzeichen: Aktiva und Passiva als positive Salden. Null-Zeilen werden ausgeblendet. · Jahresergebnis wird aus der Bilanzdifferenz (Aktiva − Passiva) abgeleitet und in P.A.V eingebucht.</div>
+  <div class="bilanz-meta"><span class="fa-dot fa-dot-orange"></span>Layout: ${esc(layoutLabel || '')} · Kontenrahmen: ${esc(chartLabel)} · ${overridesUsed ? `<strong>${overridesUsed}</strong> Konto-Overrides aktiv · ` : ''}Vorzeichen: Aktiva und Passiva als positive Salden. Null-Zeilen werden ausgeblendet. · Jahresergebnis wird aus der Bilanzdifferenz (Aktiva − Passiva) abgeleitet.</div>
   ${notmappedHtml}
 </div>`;
   };
@@ -419,6 +433,16 @@ define([
 
     const chartOfAccounts = getChartOfAccounts();
     const chartLabel = CHART_LABELS[chartOfAccounts] || chartOfAccounts;
+
+    // Layout-Variante (voll | lean) aus Deployment-Param. URL-Override
+    // `?layout=lean` erlaubt schnelles Umschalten ohne Deployment-Edit.
+    const overrideLayout = String((request.parameters.layout) || '').toLowerCase();
+    const chartLayout = (overrideLayout === 'lean' || overrideLayout === 'voll')
+      ? overrideLayout
+      : getChartLayout();
+    const variant = config.resolve(chartLayout);
+    const AKTIVA_LINES = variant.aktiva;
+    const PASSIVA_LINES = variant.passiva;
 
     const p = request.parameters;
     const selSub = p.custpage_sub ?? p.sub ?? '';
@@ -500,10 +524,10 @@ define([
       schemaMissing = !!listMap.schemaMissing;
 
       const balances = queries.getBalanceSheetBalances(selPeriod.id, effectiveBook, selSub || '');
-      const agg = aggregate(balances, chartOfAccounts, listMap);
+      const agg = aggregate(balances, chartOfAccounts, listMap, variant);
       notmapped = agg.notmapped;
       overridesUsed = agg.overridesUsed;
-      const fin = finalizeValues(agg.detail);
+      const fin = finalizeValues(agg.detail, variant);
       values = fin.values;
       plug = fin.plug;
       aktivaTotal = values['AKT.t'] || 0;
@@ -521,8 +545,8 @@ define([
       if (selPrevPeriod) {
         try {
           const balancesPrev = queries.getBalanceSheetBalances(selPrevPeriod.id, effectiveBook, selSub || '');
-          const aggPrev = aggregate(balancesPrev, chartOfAccounts, listMap);
-          const finPrev = finalizeValues(aggPrev.detail);
+          const aggPrev = aggregate(balancesPrev, chartOfAccounts, listMap, variant);
+          const finPrev = finalizeValues(aggPrev.detail, variant);
           valuesPrev = finPrev.values;
           plugPrev = finPrev.plug;
           aktivaTotalPrev = valuesPrev['AKT.t'] || 0;
@@ -707,6 +731,8 @@ define([
           notmappedAktiva: notmapped.aktiva, notmappedPassiva: notmapped.passiva,
           notmappedAccounts: notmapped.accounts, chartLabel,
           overridesUsed, schemaMissing,
+          aktivaLines: AKTIVA_LINES, passivaLines: PASSIVA_LINES,
+          layoutLabel: variant.label,
         })
       : '<div class="bilanz-wrap"><div class="fa-card"><p>Bitte Periode auswählen.</p></div></div>';
     htmlField.updateLayoutType({ layoutType: serverWidget.FieldLayoutType.OUTSIDEBELOW });

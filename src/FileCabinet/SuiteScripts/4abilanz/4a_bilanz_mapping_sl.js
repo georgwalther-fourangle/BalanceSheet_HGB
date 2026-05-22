@@ -28,7 +28,8 @@ define([
     style, config) => {
 
   const { esc } = style;
-  const { lookupAccount, allLines, getLineByScriptid, getDetailLines } = config;
+  // Wie im Haupt-Suitelet: Variant-spezifische Helpers werden PRO REQUEST aus
+  // config.resolve(layout) gezogen, nicht hier module-level destrukturiert.
 
   // Selbe Liste wie in 4a_bilanz_queries.js — bewusst dupliziert, damit das
   // Mapping-Suitelet keine Abhaengigkeit zum queries-Modul braucht.
@@ -56,6 +57,12 @@ define([
     const v = String(runtime.getCurrentScript().getParameter({ name: 'custscript_4abilanz_map_chart' }) || '').toLowerCase();
     if (v === 'skr03' || v === 'skr04' || v === 'nstype') return v;
     return 'skr04';
+  };
+
+  const getChartLayout = () => {
+    const v = String(runtime.getCurrentScript().getParameter({ name: 'custscript_4abilanz_map_layout' }) || '').toLowerCase();
+    if (v === 'voll' || v === 'hgb_voll') return 'voll';
+    return 'lean'; // Default — siehe Hinweis in 4a_bilanz_sl.js getChartLayout()
   };
 
   // Alle aktiven BS-Konten + aktueller Override (interne customvalue-ID).
@@ -183,6 +190,14 @@ define([
     }
 
     // --- GET: Liste rendern ---
+    // Variant aus Deployment-Param + URL-Override `?layout=lean|voll`.
+    const overrideLayout = String(request.parameters.layout || '').toLowerCase();
+    const chartLayout = (overrideLayout === 'lean' || overrideLayout === 'voll')
+      ? overrideLayout
+      : getChartLayout();
+    const variant = config.resolve(chartLayout);
+    const { lookupAccount, allLines, getLineByScriptid, getDetailLines } = variant;
+
     const chart = getChartOfAccounts();
     const overrideChart = String(request.parameters.chart || '').toLowerCase();
     const effectiveChart = (overrideChart === 'skr03' || overrideChart === 'skr04' || overrideChart === 'nstype')

@@ -17,6 +17,7 @@
       <status>RELEASED</status>
       <title>4a Bilanz HGB — Konten-Mapping</title>
       <custscript_4abilanz_map_chart>skr03</custscript_4abilanz_map_chart>
+      <custscript_4abilanz_map_layout>lean</custscript_4abilanz_map_layout>
     </scriptdeployment>
   </scriptdeployments>
   <scriptcustomfields>
@@ -32,6 +33,20 @@
       <isformula>F</isformula>
       <ismandatory>F</ismandatory>
       <label>Kontenrahmen</label>
+      <storevalue>T</storevalue>
+    </scriptcustomfield>
+    <scriptcustomfield scriptid="custscript_4abilanz_map_layout">
+      <accesslevel>2</accesslevel>
+      <applyformatting>F</applyformatting>
+      <checkspelling>F</checkspelling>
+      <defaultchecked>F</defaultchecked>
+      <defaultvalue>lean</defaultvalue>
+      <description>Bilanz-Struktur-Variante (sollte mit Haupt-Bilanz-Deployment uebereinstimmen): voll | lean.</description>
+      <displaytype>NORMAL</displaytype>
+      <fieldtype>TEXT</fieldtype>
+      <isformula>F</isformula>
+      <ismandatory>F</ismandatory>
+      <label>Bilanz-Struktur</label>
       <storevalue>T</storevalue>
     </scriptcustomfield>
   </scriptcustomfields>

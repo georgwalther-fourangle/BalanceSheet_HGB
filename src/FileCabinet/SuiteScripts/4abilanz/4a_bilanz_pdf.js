@@ -138,8 +138,16 @@ define(['./4a_bilanz_style', './4a_bilanz_config'], (style, config) => {
        color: #6B7280; padding: 3pt 4pt; border-bottom: 1pt solid #C7C7C7; }
   th.num { text-align: right; }
   td { padding: 2pt 4pt; border-bottom: 1pt solid #E5E7EB; }
-  td.num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
-  td.lbl { white-space: nowrap; padding-left: 4pt; }
+  /* td.num: nowrap, Zahlen sollen NIE umbrechen.
+     td.lbl: KEIN nowrap! Lange Bezeichner wie "IV. Kassenbestand,
+     Bundesbankguthaben, ..." wuerden sonst zusammen mit der Vorjahresspalte
+     die 395pt einer A4-Landscape-Seitenhaelfte sprengen → BFO crash
+     (UNEXPECTED_ERROR). Mit normalem Wrapping wraps das Label statt zu
+     ueberlaufen.
+     font-variant-numeric ist eine moderne Browser-CSS-Property — BFO
+     versteht sie nicht; ohne Funktionsverlust entfernt. */
+  td.num { text-align: right; white-space: nowrap; }
+  td.lbl { padding-left: 4pt; }
   tr.detail.indent td.lbl { padding-left: 16pt; }
   tr.section td { font-weight: bold; color: #1F2937; text-transform: none;
                   font-size: 7pt; padding: 5pt 4pt 1pt 0pt;

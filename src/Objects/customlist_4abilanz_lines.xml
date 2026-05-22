@@ -34,6 +34,7 @@
     <customvalue scriptid="val_d_d">     <value>D. Aktive latente Steuern</value>                    <isinactive>F</isinactive></customvalue>
     <customvalue scriptid="val_e_d">     <value>E. Aktiver Unterschiedsbetrag</value>                <isinactive>F</isinactive></customvalue>
     <customvalue scriptid="val_p_a_i">   <value>P.A.I Gezeichnetes Kapital</value>                   <isinactive>F</isinactive></customvalue>
+    <customvalue scriptid="val_p_a_i_neg"><value>P.A.I eigene Anteile (Abzug)</value>                  <isinactive>F</isinactive></customvalue>
     <customvalue scriptid="val_p_a_ii">  <value>P.A.II Kapitalrücklage</value>                       <isinactive>F</isinactive></customvalue>
     <customvalue scriptid="val_p_a_iii_1"><value>P.A.III.1 Gesetzliche Rücklage</value>               <isinactive>F</isinactive></customvalue>
     <customvalue scriptid="val_p_a_iii_2"><value>P.A.III.2 Rücklage für eigene Anteile</value>        <isinactive>F</isinactive></customvalue>
