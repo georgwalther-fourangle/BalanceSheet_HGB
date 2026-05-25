@@ -171,6 +171,47 @@ define([
     return { saved, errors };
   };
 
+  /**
+   * Labels-POST-Handler: liest label_<customvalueId>=newName und
+   * origlabel_<customvalueId>=oldName aus den Form-Params. Speichert nur
+   * Eintraege mit Aenderung. Leeres Label wird verweigert.
+   * Returns: { saved: number, errors: [{id, msg}] }
+   */
+  const saveLabelChanges = (parameters) => {
+    let saved = 0;
+    const errors = [];
+    for (const key in parameters) {
+      if (!Object.prototype.hasOwnProperty.call(parameters, key)) continue;
+      const m = /^label_(\d+)$/.exec(key);
+      if (!m) continue;
+      const cvId = m[1];
+      const newVal = String(parameters[key] || '').trim();
+      const oldVal = String(parameters['origlabel_' + cvId] || '').trim();
+      if (newVal === oldVal) continue;
+      if (!newVal) {
+        errors.push({ id: cvId, msg: 'Label darf nicht leer sein.' });
+        continue;
+      }
+      try {
+        record.submitFields({
+          type: 'customlist_4abilanz_lines',
+          id: cvId,
+          values: { name: newVal },
+          options: { enableSourcing: false, ignoreMandatoryFields: true },
+        });
+        saved++;
+      } catch (e) {
+        const msg = (e && e.message) || String(e);
+        log.error({
+          title: '4a_bilanz labels: submitFields failed cvId=' + cvId,
+          details: 'newVal=' + newVal + ' oldVal=' + oldVal + ' err=' + msg,
+        });
+        errors.push({ id: cvId, msg });
+      }
+    }
+    return { saved, errors };
+  };
+
   // Baut die User-freundliche Fehlermeldung als HTML-Fragment auf. Bekommt:
   //   rawMsg         — die rohe NetSuite-Errormessage (UNESCAPED)
   //   acctNumLink    — fertig zusammengebautes <a>-Tag mit Konto-Nr als Text
@@ -197,16 +238,31 @@ define([
 
     // TEMP TEST MODE — License-Gate auskommentiert. Vor Production wieder rein.
 
-    // --- POST: Override-Aenderungen speichern, dann GET-Redirect mit Status ---
+    // --- POST: action='labels' → Customlist-Werte speichern, sonst Konto-
+    //          Overrides speichern. Beide Pfade enden mit GET-Redirect samt
+    //          Status-Param.
     if (request.method === 'POST') {
-      const { saved, errors } = savePostedChanges(request.parameters);
-      const overrideChart = String(request.parameters.chart || '').toLowerCase();
-      // Erste 5 Errors als JSON in URL-Param. Mehr passt nicht zuverlaessig in
-      // die URL — die uebrigen kann der User im Execution-Log nachsehen.
-      const errPacked = errors.slice(0, 5).map((e) => ({
+      const action = String(request.parameters.action || 'mapping').toLowerCase();
+      const packErrors = (errors) => errors.slice(0, 5).map((e) => ({
         id: String(e.id),
         msg: String(e.msg || '').slice(0, 200),
       }));
+      if (action === 'labels') {
+        const { saved, errors } = saveLabelChanges(request.parameters);
+        const errPacked = packErrors(errors);
+        redirect.redirect({
+          url: selfUrl({
+            view: 'labels',
+            saved: String(saved),
+            errored: String(errors.length),
+            errs: errPacked.length ? JSON.stringify(errPacked) : '',
+          }),
+        });
+        return;
+      }
+      const { saved, errors } = savePostedChanges(request.parameters);
+      const overrideChart = String(request.parameters.chart || '').toLowerCase();
+      const errPacked = packErrors(errors);
       redirect.redirect({
         url: selfUrl({
           saved: String(saved),
@@ -428,15 +484,29 @@ define([
     let statusHtml = '';
     if (savedParam || erroredParam) {
       const parts = [];
-      if (savedParam) parts.push(`${savedParam} Konto-Override${savedParam === 1 ? '' : 's'} gespeichert`);
+      if (savedParam) {
+        const itemLabel = view === 'labels'
+          ? `Label${savedParam === 1 ? '' : 's'}`
+          : `Konto-Override${savedParam === 1 ? '' : 's'}`;
+        parts.push(`${savedParam} ${itemLabel} gespeichert`);
+      }
       if (erroredParam) parts.push(`<strong>${erroredParam} Fehler</strong>`);
       const cls = erroredParam ? 'bilanz-balance-check fail' : 'bilanz-balance-check ok';
       statusHtml = `<div class="${cls}">${parts.join(' · ')}</div>`;
       if (postedErrors.length) {
         const items = postedErrors.map((e) => {
+          if (view === 'labels') {
+            // Labels-View: id ist customvalue-internalId. Wir loesen scriptid
+            // + aktueller Name aus listMap auf.
+            const sid = listMap.idToScriptid[String(e.id)] || '';
+            const name = listMap.idToName[String(e.id)] || '';
+            const label = sid
+              ? `<strong>${esc(sid)}</strong>${name ? ` «${esc(name)}»` : ''}`
+              : `<strong>CustomvalueID ${esc(e.id)}</strong>`;
+            return `<li>${label}: ${esc(String(e.msg || '').slice(0, 200))}</li>`;
+          }
+          // Mapping-View: id ist account-internalId. Link auf Account-Edit.
           const a = acctById[String(e.id)];
-          // Account-Edit-Seite in NetSuite — relative URL, resolved gegen die
-          // Domain unter der das Suitelet laeuft.
           const acctUrl = `/app/accounting/account/account.nl?id=${encodeURIComponent(e.id)}`;
           const linkText = a ? (a.acctnumber || `ID ${e.id}`) : `ID ${e.id}`;
           const acctNumLink = `<a href="${esc(acctUrl)}" target="_blank"><strong>${esc(linkText)}</strong></a>`;
