@@ -561,12 +561,82 @@ ${filterHtml}`;
       label: ' ',
     });
     // View-Branching: Mapping-View zeigt die Konto-Liste, Labels-View die
-    // editierbare Customlist-Werte-Tabelle (Phase 2). Placeholder bis dahin.
+    // editierbare Customlist-Werte-Tabelle.
     if (view === 'labels') {
-      tableField.defaultValue = `
-<div class="bilanz-mapping-wrap" style="padding:20px; color:#6B7280;">
-  Labels-Editor folgt in der nächsten Phase.
+      // Wenn die Customlist gar nicht installiert ist, zeigen wir nur die
+      // Schema-Warnung (steht schon im statusHtml in der Topbar) und keinen
+      // leeren Editor.
+      if (schemaMissing) {
+        tableField.defaultValue = `<div class="bilanz-mapping-wrap" style="padding:20px; color:#6B7280;">
+  Customlist ist in diesem Account nicht installiert — siehe Hinweis oben.
 </div>`;
+      } else {
+        // Reihenfolge: erst alle Detail-Lines in Variant-Tree-Order (so wie die
+        // Bilanz selbst rendert), dann verbleibende Customlist-Eintraege die
+        // in der aktiven Variante nicht vorkommen (z.B. Finanzanlagen in lean).
+        const labelRows = [];
+        const seenSids = new Set();
+        for (const ln of allLines) {
+          if (ln.type !== 'detail' || !ln.scriptid) continue;
+          const cvId = listMap.scriptidToId[ln.scriptid];
+          if (!cvId || seenSids.has(ln.scriptid)) continue;
+          seenSids.add(ln.scriptid);
+          labelRows.push({
+            cvId,
+            sid: ln.scriptid,
+            currentName: listMap.idToName[cvId] || '',
+            refLabel: `${ln.id} ${ln.label || ''}`.trim(),
+            refSide: ln.side,
+            inVariant: true,
+          });
+        }
+        for (const sid in listMap.scriptidToId) {
+          if (seenSids.has(sid)) continue;
+          const cvId = listMap.scriptidToId[sid];
+          labelRows.push({
+            cvId,
+            sid,
+            currentName: listMap.idToName[cvId] || '',
+            refLabel: '— nicht in aktiver Variante —',
+            refSide: '',
+            inVariant: false,
+          });
+        }
+
+        const labelRowsHtml = labelRows.map((r) => {
+          const sideClass = r.refSide || (r.inVariant ? '' : 'unmapped');
+          const refCell = r.inVariant
+            ? esc(r.refLabel)
+            : `<span class="fa-muted-small">${esc(r.refLabel)}</span>`;
+          return `<tr class="${sideClass}">
+            <td class="meta" style="font-family:Menlo,Monaco,monospace; font-size:11px;">${esc(r.sid)}</td>
+            <td>${refCell}</td>
+            <td>
+              <input type="text" name="label_${esc(r.cvId)}" value="${esc(r.currentName)}"
+                     style="width:100%; padding:4px 6px; box-sizing:border-box; border:1px solid #D1D5DB; border-radius:3px;" />
+              <input type="hidden" name="origlabel_${esc(r.cvId)}" value="${esc(r.currentName)}" />
+            </td>
+          </tr>`;
+        }).join('');
+
+        tableField.defaultValue = `
+<div class="bilanz-mapping-wrap">
+  <div class="fa-muted-small" style="margin-bottom:8px;">
+    Aenderungen am Customlist-Wert wirken sich auf Bilanz-Tabelle, PDF und XLSX aus.
+    Die Referenz-Spalte zeigt das offizielle §266-Label aus der aktiven Variante (${esc(effectiveLabel)} / ${esc(chartLayout)}).
+  </div>
+  <table class="bilanz-mapping-table">
+    <thead>
+      <tr>
+        <th style="width:18%">Scriptid</th>
+        <th style="width:42%">Referenz (aktive Variante)</th>
+        <th style="width:40%">Customlist-Name (editierbar)</th>
+      </tr>
+    </thead>
+    <tbody>${labelRowsHtml}</tbody>
+  </table>
+</div>`;
+      }
     } else {
       tableField.defaultValue = `
 <div class="bilanz-mapping-wrap">
