@@ -171,22 +171,25 @@ define([
     return { saved, errors };
   };
 
-  // Mappt NetSuite-Fehlermeldungen auf User-freundliche Hints. Fallback: rohe
-  // Message (auf 200 Zeichen gekuerzt), damit zumindest etwas sichtbar ist.
-  const errorHint = (msg) => {
-    const m = String(msg || '');
-    if (m.indexOf("child account can't have a different account type") !== -1
-        || m.indexOf('child account') !== -1) {
-      return 'Sub-Account-Typ-Konflikt in NetSuite — Konto öffnen, Account-Type der Sub-Accounts angleichen.';
+  // Baut die User-freundliche Fehlermeldung als HTML-Fragment auf. Bekommt:
+  //   rawMsg         — die rohe NetSuite-Errormessage (UNESCAPED)
+  //   acctNumLink    — fertig zusammengebautes <a>-Tag mit Konto-Nr als Text
+  //   escapedName    — bereits via esc() escaped, oder leer
+  // Fallback: rohe Message escaped + Konto-Link davor.
+  const errorHintHtml = (rawMsg, acctNumLink, escapedName) => {
+    const m = String(rawMsg || '');
+    const nameSuffix = escapedName ? ` «${escapedName}»` : '';
+    if (m.indexOf("child account") !== -1) {
+      return `Dieser Account ${acctNumLink}${nameSuffix} hat Unterkonten, die nicht die selbe Kontenart haben wie der Parent-Account. Bitte den Account in NetSuite öffnen und den Account-Type der Unterkonten angleichen.`;
     }
     if (m.indexOf('custrecord_4abilanz_line') !== -1
         || m.indexOf('customlist_4abilanz_lines') !== -1) {
-      return 'Override-Schema fehlt im Account — Bundle-Update einspielen.';
+      return `Account ${acctNumLink}${nameSuffix}: Override-Schema fehlt im Account — bitte Bundle-Update einspielen.`;
     }
     if (m.toLowerCase().indexOf('permission') !== -1) {
-      return 'Keine Berechtigung zum Bearbeiten dieses Kontos.';
+      return `Account ${acctNumLink}${nameSuffix}: keine Berechtigung zum Bearbeiten dieses Kontos.`;
     }
-    return m.slice(0, 200);
+    return `Account ${acctNumLink}${nameSuffix}: ${esc(m.slice(0, 200))}`;
   };
 
   const onRequest = (context) => {
@@ -418,10 +421,13 @@ define([
       if (postedErrors.length) {
         const items = postedErrors.map((e) => {
           const a = acctById[String(e.id)];
-          const acctLabel = a
-            ? `<strong>${esc(a.acctnumber || '—')} «${esc(a.acctname || '')}»</strong>`
-            : `<strong>Account-ID ${esc(e.id)}</strong>`;
-          return `<li>${acctLabel}: ${esc(errorHint(e.msg))}</li>`;
+          // Account-Edit-Seite in NetSuite — relative URL, resolved gegen die
+          // Domain unter der das Suitelet laeuft.
+          const acctUrl = `/app/accounting/account/account.nl?id=${encodeURIComponent(e.id)}`;
+          const linkText = a ? (a.acctnumber || `ID ${e.id}`) : `ID ${e.id}`;
+          const acctNumLink = `<a href="${esc(acctUrl)}" target="_blank"><strong>${esc(linkText)}</strong></a>`;
+          const escapedName = a && a.acctname ? esc(a.acctname) : '';
+          return `<li>${errorHintHtml(e.msg, acctNumLink, escapedName)}</li>`;
         }).join('');
         const moreNote = erroredParam > postedErrors.length
           ? `<div class="fa-muted-small" style="margin-top:6px;">… und ${erroredParam - postedErrors.length} weitere — siehe Execution-Log.</div>`
