@@ -180,21 +180,23 @@ define(['N/query', 'N/log'], (query, log) => {
           title: '4a_bilanz: customlist_4abilanz_lines fehlt — leerer ListMap',
           details: 'Bitte Bundle-Update einspielen.',
         });
-        return { idToScriptid: {}, scriptidToId: {}, idToName: {}, schemaMissing: true };
+        return { idToScriptid: {}, scriptidToId: {}, idToName: {}, scriptidToName: {}, schemaMissing: true };
       }
       throw e;
     }
     const idToScriptid = {};
     const scriptidToId = {};
     const idToName = {};
+    const scriptidToName = {};
     for (const r of rows) {
       const id = String(r.id);
       const sid = String(r.scriptid || '').toLowerCase();
       idToScriptid[id] = sid;
       scriptidToId[sid] = id;
       idToName[id] = r.name;
+      scriptidToName[sid] = r.name;
     }
-    return { idToScriptid, scriptidToId, idToName, schemaMissing: false };
+    return { idToScriptid, scriptidToId, idToName, scriptidToName, schemaMissing: false };
   };
 
   /**

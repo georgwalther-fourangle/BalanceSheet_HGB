@@ -157,5 +157,29 @@ define(['./4a_bilanz_config_voll', './4a_bilanz_config_lean'], (vollRaw, leanRaw
     return compiled.lean;
   };
 
-  return { resolve, toScriptid };
+  /**
+   * Liefert eine neue Variant, bei der line.label aus dem Customlist-Eintrag
+   * (scriptid → name) gezogen wird, falls vorhanden. Andere Properties
+   * (helpers, lookupAccount, getLineByScriptid, computeValues) werden vom
+   * Original durchgereicht — labels sind nur fuer Rendering relevant.
+   *
+   * Wenn `scriptidToName` leer ist, wird die Original-Variant unveraendert
+   * zurueckgegeben (kein unnoetiges Klonen).
+   */
+  const applyLabelOverrides = (variant, scriptidToName) => {
+    if (!scriptidToName || !Object.keys(scriptidToName).length) return variant;
+    const patchLine = (ln) => {
+      if (!ln.scriptid) return ln;
+      const override = scriptidToName[String(ln.scriptid).toLowerCase()];
+      if (!override || override === ln.label) return ln;
+      return Object.assign({}, ln, { label: override });
+    };
+    return Object.assign({}, variant, {
+      aktiva: variant.aktiva.map(patchLine),
+      passiva: variant.passiva.map(patchLine),
+      allLines: variant.allLines.map(patchLine),
+    });
+  };
+
+  return { resolve, applyLabelOverrides, toScriptid };
 });

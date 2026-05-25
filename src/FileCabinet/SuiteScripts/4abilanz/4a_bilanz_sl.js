@@ -440,7 +440,12 @@ define([
     const chartLayout = (overrideLayout === 'lean' || overrideLayout === 'voll')
       ? overrideLayout
       : getChartLayout();
-    const variant = config.resolve(chartLayout);
+    // Variant nach Resolve mit den aktuellen Customlist-Namen patchen — User-
+    // editierte Bilanz-Zeilen-Labels (via Mapping-Suitelet) schlagen so auf
+    // die HTML-Tabelle, PDF und XLSX durch.
+    const rawVariant = config.resolve(chartLayout);
+    const labelListMap = queries.getLineListMap();
+    const variant = config.applyLabelOverrides(rawVariant, labelListMap.scriptidToName);
     const AKTIVA_LINES = variant.aktiva;
     const PASSIVA_LINES = variant.passiva;
 

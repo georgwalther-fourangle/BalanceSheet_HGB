@@ -105,21 +105,23 @@ define([
       `);
     } catch (e) {
       if (isOverrideSchemaMissing(e)) {
-        return { idToScriptid: {}, scriptidToId: {}, idToName: {}, schemaMissing: true };
+        return { idToScriptid: {}, scriptidToId: {}, idToName: {}, scriptidToName: {}, schemaMissing: true };
       }
       throw e;
     }
     const idToScriptid = {};
     const scriptidToId = {};
     const idToName = {};
+    const scriptidToName = {};
     for (const r of rows) {
       const id = String(r.id);
       const sid = String(r.scriptid || '').toLowerCase();
       idToScriptid[id] = sid;
       scriptidToId[sid] = id;
       idToName[id] = r.name;
+      scriptidToName[sid] = r.name;
     }
-    return { idToScriptid, scriptidToId, idToName, schemaMissing: false };
+    return { idToScriptid, scriptidToId, idToName, scriptidToName, schemaMissing: false };
   };
 
   // selfUrl mit beliebigen URL-Parametern.
@@ -285,8 +287,20 @@ define([
     const chartLayout = (overrideLayout === 'lean' || overrideLayout === 'voll')
       ? overrideLayout
       : getChartLayout();
-    const variant = config.resolve(chartLayout);
-    const { lookupAccount, allLines, getLineByScriptid, getDetailLines } = variant;
+    // Wir behalten ZWEI Variants:
+    //  - rawVariant: original §266-Labels aus dem Code, fuer die Referenz-Spalte
+    //                in der Labels-View (sonst koennte der User die "offizielle"
+    //                Wording-Vorlage nicht mehr sehen).
+    //  - variant:   mit Customlist-Namen ueberschrieben — wird fuer Dropdown,
+    //               Mapping-Rows und alle anderen Render-Pfade genutzt, damit
+    //               das, was Harald in der Labels-View editiert, auch hier
+    //               sofort sichtbar ist.
+    const rawVariant = config.resolve(chartLayout);
+    // listMap wird gleich darunter aufgeloest — wir koennen es hier noch nicht
+    // einbauen ohne die Reihenfolge zu drehen. Daher resolve unten nochmal.
+    const { lookupAccount, getLineByScriptid, getDetailLines } = rawVariant;
+    let variant = rawVariant;
+    let allLines = rawVariant.allLines;
 
     const chart = getChartOfAccounts();
     const overrideChart = String(request.parameters.chart || '').toLowerCase();
@@ -297,6 +311,12 @@ define([
     const listMap = getLineListMap();
     const { accounts, schemaMissing: acctSchemaMissing } = getAllBsAccounts();
     const schemaMissing = !!(listMap.schemaMissing || acctSchemaMissing);
+
+    // Jetzt wo listMap.scriptidToName vorliegt: ueberlagerten Variant
+    // berechnen. Sobald Customlist-Eintraege user-editiert sind, sieht das
+    // Mapping-Dropdown die neuen Namen.
+    variant = config.applyLabelOverrides(rawVariant, listMap.scriptidToName);
+    allLines = variant.allLines;
 
     // Dropdown-Struktur: pro Side den kompletten Variant-Tree durchgehen und
     // section/header/detail in eine Liste packen, damit das Dropdown die volle
@@ -644,9 +664,14 @@ ${filterHtml}`;
         // Reihenfolge: erst alle Detail-Lines in Variant-Tree-Order (so wie die
         // Bilanz selbst rendert), dann verbleibende Customlist-Eintraege die
         // in der aktiven Variante nicht vorkommen (z.B. Finanzanlagen in lean).
+        //
+        // Wichtig: hier iterieren wir UEBER rawVariant.allLines, damit die
+        // Referenz-Spalte das offizielle §266-Label aus dem Code zeigt — sonst
+        // waere die Referenz identisch zum editierbaren Customlist-Wert und
+        // verlieren wir die Vorlage.
         const labelRows = [];
         const seenSids = new Set();
-        for (const ln of allLines) {
+        for (const ln of rawVariant.allLines) {
           if (ln.type !== 'detail' || !ln.scriptid) continue;
           const cvId = listMap.scriptidToId[ln.scriptid];
           if (!cvId || seenSids.has(ln.scriptid)) continue;
