@@ -417,11 +417,12 @@ define([
       return `<a href="${esc(selfUrl({ view: key }))}" class="${cls}">${esc(label)}</a>`;
     };
 
-    // Chart-Tabs (nur auf mapping-view sichtbar). view-Param wird mitgegeben,
-    // damit Chart-Wechsel auf mapping bleibt.
+    // Chart-Picker als sekundaere Pills (nur auf mapping-view sichtbar) — so
+    // visuell von den primaeren View-Tabs unterscheidbar. view-Param wird
+    // mitgegeben, damit Chart-Wechsel auf mapping bleibt.
     const chartLink = (key, label) => {
       const active = key === effectiveChart;
-      const cls = active ? 'fa-tab active' : 'fa-tab';
+      const cls = active ? 'fa-pill active' : 'fa-pill';
       return `<a href="${esc(selfUrl({ chart: key, view: 'mapping' }))}" class="${cls}">${esc(label)}</a>`;
     };
 
@@ -597,9 +598,10 @@ define([
     const viewSubtitle = view === 'labels' ? 'Bilanz-Zeilen-Labels' : effectiveLabel;
     const submitLabel = view === 'labels' ? 'Labels speichern' : 'Override speichern';
 
-    // Chart-Tabs + Filter nur in der Mapping-View — auf Labels-View irrelevant.
+    // Chart-Pills + Filter nur in der Mapping-View — auf Labels-View irrelevant.
     const chartTabsHtml = view === 'mapping' ? `
-<nav class="fa-tabs" style="margin: -6px 0 14px 0;">
+<nav class="fa-pills">
+  <span class="fa-pills-label">Kontenrahmen:</span>
   ${chartLink('skr03', 'SKR03')}
   ${chartLink('skr04', 'SKR04')}
   ${chartLink('nstype', 'NetSuite-Kontotyp')}
@@ -628,7 +630,7 @@ define([
     ${bilanzUrl ? `<a href="${esc(bilanzUrl)}" class="fa-btn-outline fa-topbar-btn">Zurück zur Bilanz</a>` : ''}
   </div>
 </div>
-<nav class="fa-tabs" style="margin: 0 0 6px 0;">
+<nav class="fa-tabs">
   ${viewLink('mapping', 'Konten-Mapping')}
   ${viewLink('labels', 'Bilanz-Zeilen-Labels')}
 </nav>
