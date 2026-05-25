@@ -148,6 +148,15 @@ define([
       const newVal = parameters[key] || '';
       const oldVal = parameters['orig_' + acctId] || '';
       if (String(newVal) === String(oldVal)) continue; // keine Aenderung
+      // Strategie:
+      //  1) record.submitFields (10 Units, schnell). Funktioniert in den
+      //     meisten Faellen.
+      //  2) Bei "child account"-Validator-Fehler (NetSuite-Bug: triggert auch
+      //     wenn Parent- und Child-Typ identisch sind, z.B. wenn Parent-
+      //     Account inaktiv ist): record.load + setValue + save. Das ist der
+      //     gleiche Pfad, den die NetSuite-UI nutzt, und umgeht den falschen
+      //     Validator — kostet aber ~15 Units pro Konto.
+      let saveErr = null;
       try {
         record.submitFields({
           type: record.Type.ACCOUNT,
@@ -160,14 +169,36 @@ define([
           options: { enableSourcing: false, ignoreMandatoryFields: true },
         });
         saved++;
-      } catch (e) {
-        const msg = (e && e.message) || String(e);
+      } catch (e1) {
+        const msg1 = (e1 && e1.message) || String(e1);
+        if (msg1.indexOf('child account') === -1) {
+          saveErr = { msg: msg1, err: e1 };
+        } else {
+          try {
+            const rec = record.load({
+              type: record.Type.ACCOUNT,
+              id: acctId,
+              isDynamic: false,
+            });
+            rec.setValue({ fieldId: 'custrecord_4abilanz_line', value: newVal || '' });
+            rec.save({ enableSourcing: false, ignoreMandatoryFields: true });
+            saved++;
+            log.audit({
+              title: '4a_bilanz mapping: submitFields-Bypass via load+save account=' + acctId,
+              details: 'submitFields warf "child account"-Fehler — load+save hat funktioniert.',
+            });
+          } catch (e2) {
+            saveErr = { msg: (e2 && e2.message) || String(e2), err: e2 };
+          }
+        }
+      }
+      if (saveErr) {
         log.error({
-          title: '4a_bilanz mapping: submitFields failed account=' + acctId,
-          details: 'newVal=' + newVal + ' oldVal=' + oldVal + ' err=' + msg
-            + (isOverrideSchemaMissing(e) ? ' (Schema fehlt — Bundle-Update erforderlich)' : ''),
+          title: '4a_bilanz mapping: save failed account=' + acctId,
+          details: 'newVal=' + newVal + ' oldVal=' + oldVal + ' err=' + saveErr.msg
+            + (isOverrideSchemaMissing(saveErr.err) ? ' (Schema fehlt — Bundle-Update erforderlich)' : ''),
         });
-        errors.push({ id: acctId, msg });
+        errors.push({ id: acctId, msg: saveErr.msg });
       }
     }
     return { saved, errors };
