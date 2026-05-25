@@ -208,31 +208,35 @@ define([
     const { accounts, schemaMissing: acctSchemaMissing } = getAllBsAccounts();
     const schemaMissing = !!(listMap.schemaMissing || acctSchemaMissing);
 
-    // Detail-Lines fuer das Dropdown — gruppiert nach side.
-    // Wichtig: das Dropdown-Label nehmen wir aus dem Variant-Tree (ln.id +
-    // ln.label), NICHT aus dem Customlist-Namen — sonst sieht der User in
-    // lean-Variante voll-Schema-Bezeichner ("A.I.2 Konzessionen..."), waehrend
-    // dieselbe Position in der Bilanz-Tabelle als "A.I.1 entgeltlich erworbene
-    // Konzessionen..." erscheint. Der Customlist-Name bleibt nur als Fallback,
-    // falls der Variant-Tree keinen Label hat (z.B. anonyme Subtotal-Zeilen —
-    // die kommen aber gar nicht ins Dropdown, da sie type='subtotal' sind).
-    const detailLines = getDetailLines();
+    // Dropdown-Struktur: pro Side den kompletten Variant-Tree durchgehen und
+    // section/header/detail in eine Liste packen, damit das Dropdown die volle
+    // §266-Hierarchie zeigt (A. Anlagevermögen → I. Immaterielle → A.I.1 …).
+    // subtotal/total entfaellt im Dropdown — die kann der User nicht zuordnen.
+    //
+    // Labels fuer Detail-Lines kommen aus dem Variant-Tree (ln.id + ln.label),
+    // NICHT aus dem Customlist-Namen — sonst sieht der User in lean-Variante
+    // voll-Schema-Bezeichner, waehrend dieselbe Position in der Bilanz-Tabelle
+    // anders heisst.
     const linesBySide = { aktiva: [], passiva: [] };
-    for (const ln of detailLines) {
-      // scriptid → customvalue-internal-id ueber listMap
-      const internalId = listMap.scriptidToId[ln.scriptid];
-      if (!internalId) continue; // sollte nicht passieren, wenn XML konsistent
-      // Label fuer Dropdown: "<lean-Position-ID> <Variant-Label>"
-      // z.B. "A.I.1 1. entgeltlich erworbene Konzessionen..."
-      const dropdownLabel = ln.label
-        ? `${ln.id} ${ln.label}`
-        : (listMap.idToName[internalId] || ln.id);
-      linesBySide[ln.side].push({
-        id: internalId,
-        label: dropdownLabel,
-        configLabel: ln.label,
-        configId: ln.id,
-      });
+    for (const ln of allLines) {
+      if (ln.type === 'subtotal' || ln.type === 'total') continue;
+      if (ln.type === 'detail') {
+        // Detail-Line nur dann ins Dropdown, wenn customlist-Eintrag existiert.
+        const internalId = listMap.scriptidToId[ln.scriptid];
+        if (!internalId) continue;
+        linesBySide[ln.side].push({
+          kind: 'detail',
+          level: ln.level,
+          internalId,
+          label: ln.label ? `${ln.id} ${ln.label}` : (listMap.idToName[internalId] || ln.id),
+        });
+      } else if (ln.type === 'section') {
+        // Section (A./B./C./P.A./...) → optgroup-Trenner
+        linesBySide[ln.side].push({ kind: 'section', label: ln.label });
+      } else if (ln.type === 'header') {
+        // Header (I./II./III.) → disabled option innerhalb der Section
+        linesBySide[ln.side].push({ kind: 'header', label: ln.label });
+      }
     }
 
     // line-Lookup-Map fuer die Auto-Vorschlag-Anzeige
@@ -302,23 +306,67 @@ define([
       return `<a href="${esc(selfUrl({ chart: key }))}" class="${cls}">${esc(label)}</a>`;
     };
 
-    // Dropdown-Optionen pro Konto: <optgroup>-strukturiert.
+    // Dropdown-Optionen pro Konto: <optgroup> pro Section (A./B./C./P.A./...).
+    // Header-Lines (I./II./III.) als disabled option mit Einrueckung,
+    // Detail-Lines als auswaehlbare Option mit doppelter Einrueckung.
+    //
     // Bei schemaMissing rendern wir das Dropdown disabled, damit der User
     // sieht, dass Editieren erst nach Bundle-Update funktioniert.
+    const NBSP = ' ';
     const buildDropdown = (acctId, currentValue) => {
       if (schemaMissing) {
         return `<select disabled class="bilanz-mapping-select" title="Custom-Field fehlt — Bundle-Update erforderlich">
           <option>— nicht installiert —</option>
         </select>`;
       }
-      const opt = (val, label, selected) =>
-        `<option value="${esc(val)}"${selected ? ' selected' : ''}>${esc(label)}</option>`;
-      const sideOpts = (side) => linesBySide[side].map((ln) =>
-        opt(ln.id, ln.label, String(currentValue) === String(ln.id))).join('');
+      const opt = (val, label, selected, disabled) =>
+        `<option value="${esc(val)}"${selected ? ' selected' : ''}${disabled ? ' disabled' : ''}>${esc(label)}</option>`;
+
+      // Walk linesBySide and emit optgroups per section.
+      // Sonderfall: Detail-Lines auf level 0 (z.B. lean-C. RAP) sind selber
+      // section-aequivalent — eigene optgroup mit einem Eintrag.
+      const sideHtml = (side) => {
+        const out = [];
+        let groupOpen = false;
+        const closeGroup = () => { if (groupOpen) { out.push('</optgroup>'); groupOpen = false; } };
+        for (const ln of linesBySide[side]) {
+          if (ln.kind === 'section') {
+            closeGroup();
+            out.push(`<optgroup label="${esc(ln.label)}">`);
+            groupOpen = true;
+          } else if (ln.kind === 'header') {
+            // Header ohne offene Section (sollte nicht passieren, aber safe)
+            if (!groupOpen) { out.push('<optgroup label="">'); groupOpen = true; }
+            out.push(opt('', NBSP + ln.label, false, true));
+          } else if (ln.kind === 'detail') {
+            // Detail auf level 0 (standalone, kein A./B.-Wrapper) → eigene optgroup
+            if (ln.level === 0) {
+              closeGroup();
+              out.push(`<optgroup label="${esc(ln.label)}">`);
+              groupOpen = true;
+              out.push(opt(ln.internalId, NBSP + ln.label, String(currentValue) === String(ln.internalId)));
+            } else {
+              if (!groupOpen) { out.push('<optgroup label="">'); groupOpen = true; }
+              const indent = ln.level >= 2 ? NBSP + NBSP + NBSP + NBSP : NBSP + NBSP;
+              out.push(opt(ln.internalId, indent + ln.label, String(currentValue) === String(ln.internalId)));
+            }
+          }
+        }
+        closeGroup();
+        return out.join('');
+      };
+
+      // <optgroup> darf NICHT verschachtelt werden — Browser rendern das nicht.
+      // Daher: AKTIVA/PASSIVA als disabled-Separator-Option, Sections direkt
+      // als optgroups. Visuelle Disambiguation reicht, weil Passiva-Sections
+      // gleich heissen wie Aktiva-Sections (beide "A. ..."), aber durch den
+      // AKTIVA/PASSIVA-Separator klar getrennt sind.
       return `<select name="acct_${esc(acctId)}" class="bilanz-mapping-select">
         ${opt('', '— Auto (Kontenrahmen) —', !currentValue)}
-        <optgroup label="AKTIVA">${sideOpts('aktiva')}</optgroup>
-        <optgroup label="PASSIVA">${sideOpts('passiva')}</optgroup>
+        ${opt('', '═══ AKTIVA ═══', false, true)}
+        ${sideHtml('aktiva')}
+        ${opt('', '═══ PASSIVA ═══', false, true)}
+        ${sideHtml('passiva')}
       </select>`;
     };
 
