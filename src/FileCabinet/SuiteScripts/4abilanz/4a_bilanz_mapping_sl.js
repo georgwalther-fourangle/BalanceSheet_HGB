@@ -219,6 +219,11 @@ define([
     }
 
     // --- GET: Liste rendern ---
+    // View-Auswahl: 'mapping' (default, Konten-Mapping) oder 'labels'
+    // (Bilanz-Zeilen-Labels editieren).
+    const rawView = String(request.parameters.view || '').toLowerCase();
+    const view = rawView === 'labels' ? 'labels' : 'mapping';
+
     // Variant aus Deployment-Param + URL-Override `?layout=lean|voll`.
     const overrideLayout = String(request.parameters.layout || '').toLowerCase();
     const chartLayout = (overrideLayout === 'lean' || overrideLayout === 'voll')
@@ -328,11 +333,20 @@ define([
       });
     } catch (_) { /* Bilanz-Deployment nicht aufloesbar */ }
 
-    // Chart-Tabs
+    // View-Tabs (Top-Level: Konten-Mapping vs Labels) — selfUrl reset andere
+    // view-spezifische params (chart only relevant fuer mapping-view).
+    const viewLink = (key, label) => {
+      const active = key === view;
+      const cls = active ? 'fa-tab active' : 'fa-tab';
+      return `<a href="${esc(selfUrl({ view: key }))}" class="${cls}">${esc(label)}</a>`;
+    };
+
+    // Chart-Tabs (nur auf mapping-view sichtbar). view-Param wird mitgegeben,
+    // damit Chart-Wechsel auf mapping bleibt.
     const chartLink = (key, label) => {
       const active = key === effectiveChart;
       const cls = active ? 'fa-tab active' : 'fa-tab';
-      return `<a href="${esc(selfUrl({ chart: key }))}" class="${cls}">${esc(label)}</a>`;
+      return `<a href="${esc(selfUrl({ chart: key, view: 'mapping' }))}" class="${cls}">${esc(label)}</a>`;
     };
 
     // Dropdown-Optionen pro Konto: <optgroup> pro Section (A./B./C./P.A./...).
@@ -488,24 +502,21 @@ define([
       </tr>`;
     }).join('');
 
-    const topbarHtml = style.BASE_CSS + `
-<div class="fa-topbar">
-  <div class="fa-topbar-title">
-    <h1>Bilanz HGB — Konten-Mapping</h1>
-    <span class="fa-subtitle">${esc(effectiveLabel)}</span>
-  </div>
-  <div class="fa-topbar-actions">
-    <button type="submit" class="fa-btn fa-topbar-btn">Override speichern</button>
-    ${bilanzUrl ? `<a href="${esc(bilanzUrl)}" class="fa-btn-outline fa-topbar-btn">Zurück zur Bilanz</a>` : ''}
-  </div>
-</div>
+    // Subtitle + Submit-Button passen sich der View an. Hidden `action`-Input
+    // teilt dem POST-Handler mit, welcher Save-Pfad gemeint ist.
+    const viewSubtitle = view === 'labels' ? 'Bilanz-Zeilen-Labels' : effectiveLabel;
+    const submitLabel = view === 'labels' ? 'Labels speichern' : 'Override speichern';
+
+    // Chart-Tabs + Filter nur in der Mapping-View — auf Labels-View irrelevant.
+    const chartTabsHtml = view === 'mapping' ? `
 <nav class="fa-tabs" style="margin: -6px 0 14px 0;">
   ${chartLink('skr03', 'SKR03')}
   ${chartLink('skr04', 'SKR04')}
   ${chartLink('nstype', 'NetSuite-Kontotyp')}
 </nav>
-<input type="hidden" name="chart" value="${esc(effectiveChart)}" />
-${statusHtml}
+<input type="hidden" name="chart" value="${esc(effectiveChart)}" />` : '';
+
+    const filterHtml = view === 'mapping' ? `
 <div class="bilanz-mapping-filter">
   <input type="search" placeholder="Filter Kto-Nr., Name, Typ, Bilanz-Zeile…"
          onkeyup="var q=this.value.toLowerCase();var trs=document.querySelectorAll('table.bilanz-mapping-table tbody tr');var n=0;for(var i=0;i&lt;trs.length;i++){var tr=trs[i];var match=tr.innerText.toLowerCase().indexOf(q)&gt;=0;tr.style.display=match?'':'none';if(match)n++;}var c=document.getElementById('bilanz-mapping-count');if(c)c.innerText=n+' / ${cnt.total} sichtbar';" />
@@ -514,7 +525,27 @@ ${statusHtml}
   <span class="fa-muted-small"><span class="fa-dot fa-dot-orange"></span>${cnt.override} Override</span>
   <span class="fa-muted-small"><span class="fa-dot fa-dot-muted"></span>${cnt.auto} Auto</span>
   ${cnt.unmapped ? `<span class="fa-muted-small" style="color:#C00;"><span class="fa-dot fa-dot-red"></span>${cnt.unmapped} offen</span>` : ''}
-</div>`;
+</div>` : '';
+
+    const topbarHtml = style.BASE_CSS + `
+<div class="fa-topbar">
+  <div class="fa-topbar-title">
+    <h1>Bilanz HGB — Konten-Mapping</h1>
+    <span class="fa-subtitle">${esc(viewSubtitle)}</span>
+  </div>
+  <div class="fa-topbar-actions">
+    <button type="submit" class="fa-btn fa-topbar-btn">${esc(submitLabel)}</button>
+    ${bilanzUrl ? `<a href="${esc(bilanzUrl)}" class="fa-btn-outline fa-topbar-btn">Zurück zur Bilanz</a>` : ''}
+  </div>
+</div>
+<nav class="fa-tabs" style="margin: 0 0 6px 0;">
+  ${viewLink('mapping', 'Konten-Mapping')}
+  ${viewLink('labels', 'Bilanz-Zeilen-Labels')}
+</nav>
+<input type="hidden" name="action" value="${esc(view)}" />
+${chartTabsHtml}
+${statusHtml}
+${filterHtml}`;
 
     const themeField = form.addField({
       id: 'custpage_fa_theme',
@@ -529,7 +560,15 @@ ${statusHtml}
       type: serverWidget.FieldType.INLINEHTML,
       label: ' ',
     });
-    tableField.defaultValue = `
+    // View-Branching: Mapping-View zeigt die Konto-Liste, Labels-View die
+    // editierbare Customlist-Werte-Tabelle (Phase 2). Placeholder bis dahin.
+    if (view === 'labels') {
+      tableField.defaultValue = `
+<div class="bilanz-mapping-wrap" style="padding:20px; color:#6B7280;">
+  Labels-Editor folgt in der nächsten Phase.
+</div>`;
+    } else {
+      tableField.defaultValue = `
 <div class="bilanz-mapping-wrap">
   <table class="bilanz-mapping-table">
     <thead>
@@ -546,6 +585,7 @@ ${statusHtml}
     <tbody>${tableRowsHtml}</tbody>
   </table>
 </div>`;
+    }
     tableField.updateLayoutType({ layoutType: serverWidget.FieldLayoutType.OUTSIDEBELOW });
 
     response.writePage(form);
