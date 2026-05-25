@@ -16,6 +16,15 @@ define(['./4a_bilanz_style', './4a_bilanz_config'], (style, config) => {
 
   const { esc, fmtEur, isZero, stripInvalidXml } = style;
 
+  // BFO crasht bei manchen Konstellationen mit echt leeren <td>-Cells. Wir
+  // fuellen jede sonst-leere Zelle mit &#160; (nbsp), damit BFO immer was
+  // zum Rendern hat.
+  const safeLabel = (label) => {
+    const s = esc(stripInvalidXml(label));
+    return s ? s : '&#160;';
+  };
+  const safeNum = (n, blank) => (blank || isZero(n)) ? '&#160;' : fmtEur(n);
+
   const renderSideTable = (lines, values, blank, valuesPrev, prevColLabel, padToBodyRows) => {
     const hasPrev = !!valuesPrev;
     const colCount = hasPrev ? 3 : 2;
@@ -24,31 +33,31 @@ define(['./4a_bilanz_style', './4a_bilanz_config'], (style, config) => {
     for (const ln of lines) {
       if (ln.type === 'header' || ln.type === 'section') {
         const cls = ln.type === 'section' ? 'section' : 'header';
-        rowsBeforeTotal.push(`<tr class="${cls}"><td class="lbl" colspan="${colCount}">${esc(stripInvalidXml(ln.label))}</td></tr>`);
+        rowsBeforeTotal.push(`<tr class="${cls}"><td class="lbl" colspan="${colCount}">${safeLabel(ln.label)}</td></tr>`);
         continue;
       }
       const v = values[ln.id];
       const vPrev = hasPrev ? valuesPrev[ln.id] : 0;
       if (ln.type === 'total') {
-        totalRow = `<tr class="total"><td class="lbl">${esc(stripInvalidXml(ln.label))}</td>`
-          + `<td class="num" align="right">${blank ? '' : fmtEur(v)}</td>`
-          + (hasPrev ? `<td class="num prev" align="right">${blank ? '' : fmtEur(vPrev)}</td>` : '')
+        totalRow = `<tr class="total"><td class="lbl">${safeLabel(ln.label)}</td>`
+          + `<td class="num" align="right">${safeNum(v, blank)}</td>`
+          + (hasPrev ? `<td class="num prev" align="right">${safeNum(vPrev, blank)}</td>` : '')
           + '</tr>';
         continue;
       }
       if (ln.type === 'subtotal') {
-        rowsBeforeTotal.push(`<tr class="subtotal"><td class="lbl">${esc(stripInvalidXml(ln.label))}</td>`
-          + `<td class="num" align="right">${blank ? '' : fmtEur(v)}</td>`
-          + (hasPrev ? `<td class="num prev" align="right">${blank ? '' : fmtEur(vPrev)}</td>` : '')
+        rowsBeforeTotal.push(`<tr class="subtotal"><td class="lbl">${safeLabel(ln.label)}</td>`
+          + `<td class="num" align="right">${safeNum(v, blank)}</td>`
+          + (hasPrev ? `<td class="num prev" align="right">${safeNum(vPrev, blank)}</td>` : '')
           + '</tr>');
         continue;
       }
       // detail — hide row only if BOTH current and prev are zero
       if (isZero(v) && (!hasPrev || isZero(vPrev))) continue;
       const indent = ln.level >= 2 ? ' indent' : '';
-      rowsBeforeTotal.push(`<tr class="detail${indent}"><td class="lbl">${esc(stripInvalidXml(ln.label))}</td>`
-        + `<td class="num" align="right">${isZero(v) ? '' : fmtEur(v)}</td>`
-        + (hasPrev ? `<td class="num prev" align="right">${isZero(vPrev) ? '' : fmtEur(vPrev)}</td>` : '')
+      rowsBeforeTotal.push(`<tr class="detail${indent}"><td class="lbl">${safeLabel(ln.label)}</td>`
+        + `<td class="num" align="right">${safeNum(v, false)}</td>`
+        + (hasPrev ? `<td class="num prev" align="right">${safeNum(vPrev, false)}</td>` : '')
         + '</tr>');
     }
     // Padding zum Hoehenausgleich. Filler-Zeilen werden VOR jede Section
@@ -138,14 +147,6 @@ define(['./4a_bilanz_style', './4a_bilanz_config'], (style, config) => {
        color: #6B7280; padding: 3pt 4pt; border-bottom: 1pt solid #C7C7C7; }
   th.num { text-align: right; }
   td { padding: 2pt 4pt; border-bottom: 1pt solid #E5E7EB; }
-  /* td.num: nowrap, Zahlen sollen NIE umbrechen.
-     td.lbl: KEIN nowrap! Lange Bezeichner wie "IV. Kassenbestand,
-     Bundesbankguthaben, ..." wuerden sonst zusammen mit der Vorjahresspalte
-     die 395pt einer A4-Landscape-Seitenhaelfte sprengen → BFO crash
-     (UNEXPECTED_ERROR). Mit normalem Wrapping wraps das Label statt zu
-     ueberlaufen.
-     font-variant-numeric ist eine moderne Browser-CSS-Property — BFO
-     versteht sie nicht; ohne Funktionsverlust entfernt. */
   td.num { text-align: right; white-space: nowrap; }
   td.lbl { padding-left: 4pt; }
   tr.detail.indent td.lbl { padding-left: 16pt; }

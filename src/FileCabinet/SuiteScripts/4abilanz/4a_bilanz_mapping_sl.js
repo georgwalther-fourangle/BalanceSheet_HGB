@@ -208,16 +208,28 @@ define([
     const { accounts, schemaMissing: acctSchemaMissing } = getAllBsAccounts();
     const schemaMissing = !!(listMap.schemaMissing || acctSchemaMissing);
 
-    // Detail-Lines fuer das Dropdown — gruppiert nach side
+    // Detail-Lines fuer das Dropdown — gruppiert nach side.
+    // Wichtig: das Dropdown-Label nehmen wir aus dem Variant-Tree (ln.id +
+    // ln.label), NICHT aus dem Customlist-Namen — sonst sieht der User in
+    // lean-Variante voll-Schema-Bezeichner ("A.I.2 Konzessionen..."), waehrend
+    // dieselbe Position in der Bilanz-Tabelle als "A.I.1 entgeltlich erworbene
+    // Konzessionen..." erscheint. Der Customlist-Name bleibt nur als Fallback,
+    // falls der Variant-Tree keinen Label hat (z.B. anonyme Subtotal-Zeilen —
+    // die kommen aber gar nicht ins Dropdown, da sie type='subtotal' sind).
     const detailLines = getDetailLines();
     const linesBySide = { aktiva: [], passiva: [] };
     for (const ln of detailLines) {
       // scriptid → customvalue-internal-id ueber listMap
       const internalId = listMap.scriptidToId[ln.scriptid];
       if (!internalId) continue; // sollte nicht passieren, wenn XML konsistent
+      // Label fuer Dropdown: "<lean-Position-ID> <Variant-Label>"
+      // z.B. "A.I.1 1. entgeltlich erworbene Konzessionen..."
+      const dropdownLabel = ln.label
+        ? `${ln.id} ${ln.label}`
+        : (listMap.idToName[internalId] || ln.id);
       linesBySide[ln.side].push({
         id: internalId,
-        label: listMap.idToName[internalId] || ln.label,
+        label: dropdownLabel,
         configLabel: ln.label,
         configId: ln.id,
       });
