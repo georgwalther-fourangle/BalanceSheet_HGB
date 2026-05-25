@@ -133,11 +133,11 @@ define([
   /**
    * POST-Handler: liest acct_<id>=newCustomvalueId und orig_<id>=oldCustomvalueId
    * aus den Form-Params. Speichert nur Konten mit Aenderung.
-   * Returns: { saved: number, errored: number }
+   * Returns: { saved: number, errors: [{id, msg}] }
    */
   const savePostedChanges = (parameters) => {
     let saved = 0;
-    let errored = 0;
+    const errors = [];
     for (const key in parameters) {
       if (!Object.prototype.hasOwnProperty.call(parameters, key)) continue;
       const m = /^acct_(\d+)$/.exec(key);
@@ -159,15 +159,34 @@ define([
         });
         saved++;
       } catch (e) {
+        const msg = (e && e.message) || String(e);
         log.error({
           title: '4a_bilanz mapping: submitFields failed account=' + acctId,
-          details: 'newVal=' + newVal + ' oldVal=' + oldVal + ' err=' + (e.message || String(e))
+          details: 'newVal=' + newVal + ' oldVal=' + oldVal + ' err=' + msg
             + (isOverrideSchemaMissing(e) ? ' (Schema fehlt — Bundle-Update erforderlich)' : ''),
         });
-        errored++;
+        errors.push({ id: acctId, msg });
       }
     }
-    return { saved, errored };
+    return { saved, errors };
+  };
+
+  // Mappt NetSuite-Fehlermeldungen auf User-freundliche Hints. Fallback: rohe
+  // Message (auf 200 Zeichen gekuerzt), damit zumindest etwas sichtbar ist.
+  const errorHint = (msg) => {
+    const m = String(msg || '');
+    if (m.indexOf("child account can't have a different account type") !== -1
+        || m.indexOf('child account') !== -1) {
+      return 'Sub-Account-Typ-Konflikt in NetSuite — Konto öffnen, Account-Type der Sub-Accounts angleichen.';
+    }
+    if (m.indexOf('custrecord_4abilanz_line') !== -1
+        || m.indexOf('customlist_4abilanz_lines') !== -1) {
+      return 'Override-Schema fehlt im Account — Bundle-Update einspielen.';
+    }
+    if (m.toLowerCase().indexOf('permission') !== -1) {
+      return 'Keine Berechtigung zum Bearbeiten dieses Kontos.';
+    }
+    return m.slice(0, 200);
   };
 
   const onRequest = (context) => {
@@ -177,12 +196,19 @@ define([
 
     // --- POST: Override-Aenderungen speichern, dann GET-Redirect mit Status ---
     if (request.method === 'POST') {
-      const { saved, errored } = savePostedChanges(request.parameters);
+      const { saved, errors } = savePostedChanges(request.parameters);
       const overrideChart = String(request.parameters.chart || '').toLowerCase();
+      // Erste 5 Errors als JSON in URL-Param. Mehr passt nicht zuverlaessig in
+      // die URL — die uebrigen kann der User im Execution-Log nachsehen.
+      const errPacked = errors.slice(0, 5).map((e) => ({
+        id: String(e.id),
+        msg: String(e.msg || '').slice(0, 200),
+      }));
       redirect.redirect({
         url: selfUrl({
           saved: String(saved),
-          errored: String(errored),
+          errored: String(errors.length),
+          errs: errPacked.length ? JSON.stringify(errPacked) : '',
           chart: (overrideChart === 'skr03' || overrideChart === 'skr04' || overrideChart === 'nstype') ? overrideChart : '',
         }),
       });
@@ -370,16 +396,41 @@ define([
       </select>`;
     };
 
-    // Status-Banner aus URL-Param
+    // Status-Banner aus URL-Param. Bei Errors versuchen wir, die acctnumber +
+    // acctname aufzuloesen, damit Harald sofort weiss WELCHES Konto betroffen
+    // ist und WAS er tun muss.
     const savedParam = parseInt(request.parameters.saved || '0', 10) || 0;
     const erroredParam = parseInt(request.parameters.errored || '0', 10) || 0;
+    let postedErrors = [];
+    try {
+      if (request.parameters.errs) postedErrors = JSON.parse(request.parameters.errs);
+    } catch (_) { /* Bad JSON — postedErrors bleibt [] */ }
+    const acctById = {};
+    for (const a of accounts) acctById[String(a.id)] = a;
+
     let statusHtml = '';
     if (savedParam || erroredParam) {
       const parts = [];
       if (savedParam) parts.push(`${savedParam} Konto-Override${savedParam === 1 ? '' : 's'} gespeichert`);
-      if (erroredParam) parts.push(`<strong>${erroredParam} Fehler</strong> (siehe Execution-Log)`);
+      if (erroredParam) parts.push(`<strong>${erroredParam} Fehler</strong>`);
       const cls = erroredParam ? 'bilanz-balance-check fail' : 'bilanz-balance-check ok';
       statusHtml = `<div class="${cls}">${parts.join(' · ')}</div>`;
+      if (postedErrors.length) {
+        const items = postedErrors.map((e) => {
+          const a = acctById[String(e.id)];
+          const acctLabel = a
+            ? `<strong>${esc(a.acctnumber || '—')} «${esc(a.acctname || '')}»</strong>`
+            : `<strong>Account-ID ${esc(e.id)}</strong>`;
+          return `<li>${acctLabel}: ${esc(errorHint(e.msg))}</li>`;
+        }).join('');
+        const moreNote = erroredParam > postedErrors.length
+          ? `<div class="fa-muted-small" style="margin-top:6px;">… und ${erroredParam - postedErrors.length} weitere — siehe Execution-Log.</div>`
+          : '';
+        statusHtml += `<div class="bilanz-mapping-errlist" style="background:#FEF2F2; border:1px solid #FCA5A5; border-radius:4px; padding:8px 12px; margin-top:6px;">
+          <ul style="margin:4px 0; padding-left:20px;">${items}</ul>
+          ${moreNote}
+        </div>`;
+      }
     }
     if (schemaMissing) {
       statusHtml += style.renderNotice({
