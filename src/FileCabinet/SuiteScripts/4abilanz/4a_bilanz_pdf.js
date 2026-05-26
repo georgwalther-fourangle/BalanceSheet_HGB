@@ -170,14 +170,12 @@ td { padding: 2pt 4pt; }
                          notmappedAktiva, notmappedPassiva,
                          valuesPrev, prevColLabel }) => {
 
-    // Vorjahres-Spalte nur anzeigen, wenn tatsaechlich Vorjahres-Daten
-    // existieren. Bei neuen Mandanten (z.B. GRITSpot, wo Mai-2025 noch keine
-    // Postings hat) wuerde die Spalte sonst Header zeigen und alle Zellen
-    // leer lassen — frisst Platz, hilft niemandem.
-    const prevHasData = valuesPrev && (
-      !isZero(valuesPrev['AKT.t']) || !isZero(valuesPrev['PAS.t'])
-    );
-    const hasPrev = !!prevHasData;
+    // Vorjahres-Spalte anzeigen, sobald valuesPrev ueberhaupt uebergeben
+    // wurde. Die Entscheidung, ob ein Vorjahr existiert, hat die Suitelet-
+    // Schicht schon getroffen — wenn sie uns ein leeres dict reicht, ist
+    // das eine bewusste "Vorjahr=alles 0"-Aussage (z.B. neuer Mandant ohne
+    // Vorjahres-Postings). Das zeigen wir transparent als 0,00-Spalte.
+    const hasPrev = !!valuesPrev;
     const cellsPerSide = hasPrev ? 3 : 2;
 
     // Inline-Styles — siehe Doc-Block-Hinweis warum keine Klassen-Selektoren.
