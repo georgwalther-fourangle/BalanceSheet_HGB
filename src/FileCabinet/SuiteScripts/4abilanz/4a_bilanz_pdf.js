@@ -170,20 +170,30 @@ td { padding: 2pt 4pt; }
                          notmappedAktiva, notmappedPassiva,
                          valuesPrev, prevColLabel }) => {
 
-    const hasPrev = !!valuesPrev;
+    // Vorjahres-Spalte nur anzeigen, wenn tatsaechlich Vorjahres-Daten
+    // existieren. Bei neuen Mandanten (z.B. GRITSpot, wo Mai-2025 noch keine
+    // Postings hat) wuerde die Spalte sonst Header zeigen und alle Zellen
+    // leer lassen — frisst Platz, hilft niemandem.
+    const prevHasData = valuesPrev && (
+      !isZero(valuesPrev['AKT.t']) || !isZero(valuesPrev['PAS.t'])
+    );
+    const hasPrev = !!prevHasData;
     const cellsPerSide = hasPrev ? 3 : 2;
 
     // Inline-Styles — siehe Doc-Block-Hinweis warum keine Klassen-Selektoren.
-    const STY_LBL       = 'padding: 2pt 4pt; padding-left: 4pt;';
-    const STY_LBL_IND   = 'padding: 2pt 4pt; padding-left: 16pt;';
+    // text-align: left explizit, damit BFO bei wrapping nicht Block-Satz
+    // anwendet (sonst entstehen Riesenluecken zwischen Woertern in den
+    // langen HGB-Bezeichnern).
+    const STY_LBL       = 'padding: 2pt 4pt; padding-left: 4pt; text-align: left;';
+    const STY_LBL_IND   = 'padding: 2pt 4pt; padding-left: 16pt; text-align: left;';
     const STY_NUM       = 'padding: 2pt 4pt; text-align: right; white-space: nowrap;';
     const STY_NUM_PREV  = STY_NUM + ' color: #6B7280;';
-    const STY_SECTION   = 'padding: 6pt 4pt 1pt 0pt; font-weight: bold; color: #1F2937; font-size: 7pt;';
-    const STY_HEADER    = 'padding: 4pt 4pt 1pt 8pt; font-weight: bold; color: #6B7280; font-size: 6pt;';
-    const STY_SUB_LBL   = 'padding: 2pt 4pt; padding-left: 4pt; font-weight: bold; background-color: #FFF4ED;';
+    const STY_SECTION   = 'padding: 6pt 4pt 1pt 0pt; font-weight: bold; color: #1F2937; font-size: 7pt; text-align: left;';
+    const STY_HEADER    = 'padding: 4pt 4pt 1pt 8pt; font-weight: bold; color: #6B7280; font-size: 6pt; text-align: left;';
+    const STY_SUB_LBL   = 'padding: 2pt 4pt; padding-left: 4pt; font-weight: bold; background-color: #FFF4ED; text-align: left;';
     const STY_SUB_NUM   = 'padding: 2pt 4pt; text-align: right; white-space: nowrap; font-weight: bold; background-color: #FFF4ED;';
     const STY_SUB_PREV  = STY_SUB_NUM + ' color: #1F2937;';
-    const STY_TOT_LBL   = 'padding: 3pt 4pt; font-weight: bold; background-color: #E85D04; color: #fff;';
+    const STY_TOT_LBL   = 'padding: 3pt 4pt; font-weight: bold; background-color: #E85D04; color: #fff; text-align: left;';
     const STY_TOT_NUM   = 'padding: 3pt 4pt; text-align: right; white-space: nowrap; font-weight: bold; background-color: #E85D04; color: #fff;';
     const STY_TOT_PREV  = STY_TOT_NUM;
     const STY_EMPTY     = 'padding: 2pt 4pt;';
@@ -192,26 +202,66 @@ td { padding: 2pt 4pt; }
     /**
      * Wandelt eine Variant-Lines-Liste in normalisierte Row-Objekte um.
      * type: 'section'|'header'|'detail'|'subtotal'|'total'|'empty'
-     * Detail/Subtotal-Rows mit Null-Werten (beide Jahre) werden geskippt.
+     *
+     * Detail/Subtotal mit Null-Werten (beide Jahre) werden geskippt.
+     * Zusaetzlich werden leere Sections und Header weggefiltert — wenn
+     * unter einem Header keine sichtbaren Detail-/Subtotal-Zeilen folgen,
+     * ist der Header reine Optik-Schrott und macht die Seite hoch.
      */
     const linesToRows = (lines) => {
+      // 1. Pass: Detail-/Subtotal-Werte zu Rows, Sections/Header immer mit.
+      // Jede Row traegt ihr ln.level mit, damit Pass 2 die Hierarchie kennt.
       const rows = [];
       for (const ln of lines) {
-        if (ln.type === 'section') { rows.push({ type: 'section', label: ln.label }); continue; }
-        if (ln.type === 'header')  { rows.push({ type: 'header',  label: ln.label }); continue; }
+        if (ln.type === 'section') { rows.push({ type: 'section', level: ln.level, label: ln.label }); continue; }
+        if (ln.type === 'header')  { rows.push({ type: 'header',  level: ln.level, label: ln.label }); continue; }
         const v = values[ln.id];
         const vPrev = hasPrev ? valuesPrev[ln.id] : 0;
-        if (ln.type === 'total') { rows.push({ type: 'total', label: ln.label, value: v, valuePrev: vPrev }); continue; }
+        if (ln.type === 'total') { rows.push({ type: 'total', level: ln.level, label: ln.label, value: v, valuePrev: vPrev }); continue; }
         if (ln.type === 'subtotal') {
-          const labelEmpty = !ln.label || !String(ln.label).trim();
-          if (labelEmpty && isZero(v) && (!hasPrev || isZero(vPrev))) continue;
-          rows.push({ type: 'subtotal', label: ln.label, value: v, valuePrev: vPrev });
+          // Subtotal mit Wert=0 (beide Jahre): immer skippen — egal ob mit
+          // oder ohne Label. Labelte Summen wie "ausgegebenes Kapital" mit
+          // value=0 sind reine Optik-Leerzeilen und verwirren mehr als sie
+          // helfen.
+          if (isZero(v) && (!hasPrev || isZero(vPrev))) continue;
+          rows.push({ type: 'subtotal', level: ln.level, label: ln.label, value: v, valuePrev: vPrev });
           continue;
         }
         if (isZero(v) && (!hasPrev || isZero(vPrev))) continue;
-        rows.push({ type: 'detail', indent: ln.level >= 2, label: ln.label, value: v, valuePrev: vPrev });
+        rows.push({ type: 'detail', level: ln.level, indent: ln.level >= 2, label: ln.label, value: v, valuePrev: vPrev });
       }
-      return rows;
+
+      // 2. Pass: Level-aware Filter. Ein Section/Header "besitzt" nur Rows
+      // mit HOEHEREM level (d.h. Kinder im Tree). Eine Geschwister-Row mit
+      // gleichem/niedrigerem level beendet die Gruppe.
+      //
+      // Beispiel lean Passiva: P.A.I (header, level=1) folgt P.A.II (detail,
+      // level=1). P.A.II ist Geschwister, nicht Kind → P.A.I hat keine
+      // sichtbaren Children und wird entfernt.
+      const filtered = [];
+      for (let i = 0; i < rows.length; i++) {
+        const r = rows[i];
+        if (r.type === 'section' || r.type === 'header') {
+          let hasContent = false;
+          for (let j = i + 1; j < rows.length; j++) {
+            const next = rows[j];
+            // Naechste Section beendet die aktuelle Gruppe immer.
+            if (next.type === 'section') break;
+            // Anderer Header auf gleichem/niedrigerem Level beendet auch.
+            if (next.type === 'header' && (next.level == null || next.level <= r.level)) break;
+            // Detail/Subtotal/Total auf gleichem/niedrigerem Level beendet
+            // (das ist ein Geschwister, kein Kind).
+            if ((next.type === 'detail' || next.type === 'subtotal' || next.type === 'total')
+                && (next.level == null || next.level <= r.level)) break;
+            // Alles andere (Children auf hoeherem Level) = Content.
+            hasContent = true; break;
+          }
+          if (hasContent) filtered.push(r);
+        } else {
+          filtered.push(r);
+        }
+      }
+      return filtered;
     };
 
     /**
@@ -222,23 +272,28 @@ td { padding: 2pt 4pt; }
       const t = isZero(v) ? '&#160;' : fmtEur(v);
       return `<td style="${style}">${t}</td>`;
     };
+    // BFO macht Blocksatz (full-justify) in <td> bei Multi-Line-Wraps, egal
+    // ob CSS text-align oder HTML align-Attribut. Workaround: Label-Text in
+    // <p align="left" style="margin:0">...</p> einwickeln. BFO honoriert
+    // align auf <p> zuverlaessig, margin:0 verhindert zusaetzlichen Abstand.
+    const wrapP = (text) => `<p align="left" style="margin: 0;">${text}</p>`;
     const renderSideCells = (row) => {
-      if (row.type === 'section') return `<td colspan="${cellsPerSide}" style="${STY_SECTION}">${esc(stripInvalidXml(row.label))}</td>`;
-      if (row.type === 'header')  return `<td colspan="${cellsPerSide}" style="${STY_HEADER}">${esc(stripInvalidXml(row.label))}</td>`;
+      if (row.type === 'section') return `<td colspan="${cellsPerSide}" style="${STY_SECTION}">${wrapP(esc(stripInvalidXml(row.label)))}</td>`;
+      if (row.type === 'header')  return `<td colspan="${cellsPerSide}" style="${STY_HEADER}">${wrapP(esc(stripInvalidXml(row.label)))}</td>`;
       if (row.type === 'total') {
-        return `<td style="${STY_TOT_LBL}">${esc(stripInvalidXml(row.label))}</td>`
+        return `<td style="${STY_TOT_LBL}">${wrapP(esc(stripInvalidXml(row.label)))}</td>`
           + numCellHtml(row.value, STY_TOT_NUM)
           + (hasPrev ? numCellHtml(row.valuePrev, STY_TOT_PREV) : '');
       }
       if (row.type === 'subtotal') {
         const lbl = row.label ? esc(stripInvalidXml(row.label)) : '&#160;';
-        return `<td style="${STY_SUB_LBL}">${lbl}</td>`
+        return `<td style="${STY_SUB_LBL}">${wrapP(lbl)}</td>`
           + numCellHtml(row.value, STY_SUB_NUM)
           + (hasPrev ? numCellHtml(row.valuePrev, STY_SUB_PREV) : '');
       }
       if (row.type === 'detail') {
         const lblStyle = row.indent ? STY_LBL_IND : STY_LBL;
-        return `<td style="${lblStyle}">${esc(stripInvalidXml(row.label))}</td>`
+        return `<td style="${lblStyle}">${wrapP(esc(stripInvalidXml(row.label)))}</td>`
           + numCellHtml(row.value, STY_NUM)
           + (hasPrev ? numCellHtml(row.valuePrev, STY_NUM_PREV) : '');
       }
@@ -248,56 +303,44 @@ td { padding: 2pt 4pt; }
       return html;
     };
 
-    // T-Form-Layout: beide Seiten zu Rows, dann positionsweise zusammen-
-    // mergen. Padding mit empty-Rows damit die Summen-Zeilen am Ende
-    // dieselbe Tabellenzeile teilen.
-    const aRows = linesToRows(aktivaLines);
-    const pRows = linesToRows(passivaLines);
-    // Wir wollen die TOTAL-Zeile (Summe AKTIVA/PASSIVA) am gleichen Ende.
-    // Aktiva und Passiva enden beide mit einer total-Row, das passt von
-    // selbst — wir brauchen nur die Laenge davor anzugleichen.
-    const aPreTotal = aRows.slice(0, aRows.findIndex(r => r.type === 'total'));
-    const aTotal = aRows[aRows.findIndex(r => r.type === 'total')] || null;
-    const pPreTotal = pRows.slice(0, pRows.findIndex(r => r.type === 'total'));
-    const pTotal = pRows[pRows.findIndex(r => r.type === 'total')] || null;
-    const preMax = Math.max(aPreTotal.length, pPreTotal.length);
-    while (aPreTotal.length < preMax) aPreTotal.push({ type: 'empty' });
-    while (pPreTotal.length < preMax) pPreTotal.push({ type: 'empty' });
-    const combinedRows = [];
-    for (let i = 0; i < preMax; i++) {
-      combinedRows.push(`<tr>${renderSideCells(aPreTotal[i])}<td style="${STY_SPACER}">&#160;</td>${renderSideCells(pPreTotal[i])}</tr>`);
-    }
-    if (aTotal || pTotal) {
-      const aT = aTotal || { type: 'empty' };
-      const pT = pTotal || { type: 'empty' };
-      combinedRows.push(`<tr>${renderSideCells(aT)}<td style="${STY_SPACER}">&#160;</td>${renderSideCells(pT)}</tr>`);
-    }
+    // Jede Seite eine eigene Tabelle (KEIN positions-Pairing zwischen
+    // Aktiva und Passiva — dann gibt's auch keine Hoehen-Imbalance-Luecken).
+    // Aktiva-Table links, Passiva-Table rechts, dazwischen ein Spacer.
+    // Mit valign="top" stacken beide Seiten oben am Rand und fliessen
+    // unabhaengig nach unten.
+    //
+    // ABSOLUTE BREITEN (festverdrahtet, kein %, kein Auto-Layout):
+    // A4-landscape = 842pt - 38pt Padding links/rechts = 766pt Nutzbreite.
+    // Outer-Table: Aktiva 360pt + Spacer 46pt + Passiva 360pt = 766pt.
+    // Inner-Tabellen je 360pt breit:
+    //   mit Vorjahr:  Position 220 + EUR 70 + Vorjahr 70 = 360
+    //   ohne Vorjahr: Position 260 + EUR 100 = 360
+    const sideWidth = 360;
+    const spacerWidth = 46;
+    const totalWidth = sideWidth * 2 + spacerWidth; // 766pt
+    const widthPosition = hasPrev ? 220 : 260;
+    const widthNum = hasPrev ? 70 : 100;
 
-    // Spaltenbreiten: BFO's DTD (report-1.1.dtd) erlaubt kein <col>-Element,
-    // daher Breiten via width-Attribut DIREKT auf den <th>-Cells der ersten
-    // Header-Row. table-layout: fixed sorgt im body fuer die Einhaltung.
-    const widthPosition = hasPrev ? 30 : 40;
-    const widthNum = hasPrev ? 9 : 8;
-    const widthSpacer = 4;
-
-    // Spaltenbreiten: BFO respektiert beim Kunden-PDF die CSS-"width: N%"
-    // im style-Attribut nicht zuverlaessig. Wir setzen jetzt sowohl das
-    // HTML-width-Attribut (deprecated, aber BFO mag das) ALS AUCH inline-CSS-
-    // width. Belt-and-suspenders.
-    const sideTitleCell = (text) => `<td colspan="${cellsPerSide}" style="color: #E85D04; font-size: 9pt; font-weight: bold; border-bottom: 1pt solid #E85D04; padding: 3pt 4pt 2pt 4pt;">${esc(text)}</td>`;
     const colHeader = (lbl, align, width) =>
-      `<th width="${width}%" style="width: ${width}%; padding: 3pt 4pt; text-align: ${align}; font-size: 6pt; font-weight: bold; color: #6B7280;">${esc(lbl)}</th>`;
+      `<th width="${width}" style="width: ${width}pt; padding: 3pt 4pt; text-align: ${align}; font-size: 6pt; font-weight: bold; color: #6B7280; border-bottom: 1pt solid #C7C7C7;">${esc(lbl)}</th>`;
 
-    const headerRowSideTitles = `<tr>${sideTitleCell('Aktiva')}<td style="${STY_SPACER}">&#160;</td>${sideTitleCell('Passiva')}</tr>`;
-    const headerRowCols = `<tr>`
-      + colHeader('Position', 'left', widthPosition)
-      + colHeader('EUR', 'right', widthNum)
-      + (hasPrev ? colHeader(prevColLabel || 'Vorjahr', 'right', widthNum) : '')
-      + `<th width="${widthSpacer}%" style="width: ${widthSpacer}%; ${STY_SPACER}">&#160;</th>`
-      + colHeader('Position', 'left', widthPosition)
-      + colHeader('EUR', 'right', widthNum)
-      + (hasPrev ? colHeader(prevColLabel || 'Vorjahr', 'right', widthNum) : '')
-      + `</tr>`;
+    const renderInnerTable = (lines) => {
+      const rows = linesToRows(lines);
+      const rowsHtml = rows.map(renderSideCells).map(cells => `<tr>${cells}</tr>`).join('');
+      const headerRow = `<tr>`
+        + colHeader('Position', 'left', widthPosition)
+        + colHeader('EUR', 'right', widthNum)
+        + (hasPrev ? colHeader(prevColLabel || 'Vorjahr', 'right', widthNum) : '')
+        + `</tr>`;
+      return `<table width="${sideWidth}" style="width: ${sideWidth}pt;">
+<thead>${headerRow}</thead>
+<tbody>${rowsHtml}</tbody>
+</table>`;
+    };
+
+    const sideBlock = (sideTitle, lines) => {
+      return `<p align="left" style="color: #E85D04; font-size: 9pt; font-weight: bold; border-bottom: 1pt solid #E85D04; padding-bottom: 2pt; margin: 0 0 4pt 0;">${esc(sideTitle)}</p>${renderInnerTable(lines)}`;
+    };
 
     const reportTitle = `Bilanz HGB · ${periodLabel}`;
     const headerMeta = [subsidiaryLabel, `Kontenrahmen: ${chartLabel}`].filter(Boolean).join(' · ');
@@ -324,13 +367,16 @@ body { font-family: Helvetica, sans-serif; font-size: 7pt; color: #1F2937; }
 table { width: 100%; border-collapse: collapse; table-layout: fixed; }
 </style>
 </head>
-<body size="A4-landscape" padding-top="14pt" padding-bottom="14pt" padding-left="18pt" padding-right="18pt">
+<body size="A4-landscape" padding-top="34pt" padding-bottom="34pt" padding-left="38pt" padding-right="38pt">
 <p style="text-align: center; font-size: 13pt; font-weight: bold; color: #1F2937; margin: 0 0 2pt 0;">${esc(stripInvalidXml(company))}</p>
 <p style="text-align: center; font-size: 10pt; font-weight: bold; color: #E85D04; margin: 0 0 2pt 0;">${esc(stripInvalidXml(reportTitle))}</p>
 ${headerMeta ? `<p style="text-align: center; font-size: 7pt; color: #6B7280; margin: 0 0 10pt 0;">${esc(stripInvalidXml(headerMeta))}</p>` : ''}
-<table>
-<thead>${headerRowSideTitles}${headerRowCols}</thead>
-<tbody>${combinedRows.join('')}</tbody>
+<table width="${totalWidth}" style="width: ${totalWidth}pt;">
+<tr>
+<td valign="top" width="${sideWidth}" style="width: ${sideWidth}pt; padding: 0;">${sideBlock('Aktiva', aktivaLines)}</td>
+<td width="${spacerWidth}" style="width: ${spacerWidth}pt; padding: 0;">&#160;</td>
+<td valign="top" width="${sideWidth}" style="width: ${sideWidth}pt; padding: 0;">${sideBlock('Passiva', passivaLines)}</td>
+</tr>
 </table>
 ${balanceStatus}
 ${notmappedHtml}
