@@ -20,6 +20,12 @@ define(['./4a_bilanz_style', './4a_bilanz_config'], (style, config) => {
 
   const NUM_STYLE = "mso-number-format:'#,##0.00'; text-align:right;";
   const PREV_STYLE = NUM_STYLE + ' color:#6B7280;';
+  // Hintergrund-/Text-Styles MUESSEN per Cell inline gesetzt werden, weil
+  // mergeSideRows() unten die einzelnen <tr>-Wrapper aufloest und damit
+  // tr-level styles verliert. Sonst: Summe-Zeile orange-Bar weg, weisser
+  // color:#fff bleibt auf weissem Default-Background → unsichtbare Zahlen.
+  const TOTAL_BG    = 'background-color:#E85D04;color:#fff;font-weight:bold;';
+  const SUBTOTAL_BG = 'background-color:#FFF4ED;font-weight:bold;';
 
   const numVal = (n) => {
     if (n == null || Number.isNaN(n)) return '';
@@ -52,13 +58,21 @@ define(['./4a_bilanz_style', './4a_bilanz_config'], (style, config) => {
       const v = values[ln.id];
       const vPrev = hasPrev ? valuesPrev[ln.id] : 0;
       if (ln.type === 'total') {
-        totalRow = `<tr class="total" style="background-color:#E85D04;color:#fff;font-weight:bold;">`
-          + `<td>${esc(ln.label)}</td>${numCell(v, NUM_STYLE + ' color:#fff;')}${hasPrev ? numCell(vPrev, NUM_STYLE + ' color:#fff;') : ''}</tr>`;
+        // Jedes <td> bekommt die Total-Styles inline, damit sie den
+        // mergeSideRows-Aufloesungs-Schritt ueberleben.
+        totalRow = `<tr class="total">`
+          + `<td style="${TOTAL_BG}">${esc(ln.label)}</td>`
+          + numCell(v, NUM_STYLE + ' ' + TOTAL_BG)
+          + (hasPrev ? numCell(vPrev, NUM_STYLE + ' ' + TOTAL_BG) : '')
+          + '</tr>';
         continue;
       }
       if (ln.type === 'subtotal') {
-        rowsBeforeTotal.push(`<tr class="subtotal" style="background-color:#FFF4ED;font-weight:bold;">`
-          + `<td>${esc(ln.label)}</td>${numCell(v, NUM_STYLE)}${hasPrev ? numCell(vPrev, NUM_STYLE) : ''}</tr>`);
+        rowsBeforeTotal.push(`<tr class="subtotal">`
+          + `<td style="${SUBTOTAL_BG}">${esc(ln.label)}</td>`
+          + numCell(v, NUM_STYLE + ' ' + SUBTOTAL_BG)
+          + (hasPrev ? numCell(vPrev, NUM_STYLE + ' ' + SUBTOTAL_BG) : '')
+          + '</tr>');
         continue;
       }
       // detail — hide row only if BOTH are zero

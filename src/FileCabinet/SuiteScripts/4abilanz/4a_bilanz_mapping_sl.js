@@ -350,11 +350,10 @@ define([
     const { accounts, schemaMissing: acctSchemaMissing } = getAllBsAccounts();
     const schemaMissing = !!(listMap.schemaMissing || acctSchemaMissing);
 
-    // Jetzt wo listMap.scriptidToName vorliegt: ueberlagerten Variant
-    // berechnen. Sobald Customlist-Eintraege user-editiert sind, sieht das
-    // Mapping-Dropdown die neuen Namen.
-    variant = config.applyLabelOverrides(rawVariant, listMap.scriptidToName);
-    allLines = variant.allLines;
+    // KEIN applyLabelOverrides mehr: Variant-Tree-Labels sind der Source
+    // of Truth. Der Customlist enthaelt voll-style-Namen ("A.II.1 Grundstücke
+    // und Bauten") und wuerde sonst die laengeren lean-Labels ueberschreiben.
+    // variant/allLines bleiben damit gleich rawVariant/rawVariant.allLines.
 
     // Dropdown-Struktur: pro Side den kompletten Variant-Tree durchgehen und
     // section/header/detail in eine Liste packen, damit das Dropdown die volle

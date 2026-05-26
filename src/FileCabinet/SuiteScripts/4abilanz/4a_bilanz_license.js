@@ -43,7 +43,7 @@ define(['N/runtime', 'N/https', 'N/cache', 'N/crypto', 'N/encode', 'N/log'],
     try {
       const accountId = runtime.accountId;
       const secretkey = licenseHash(accountId, LICENSE_PRODUCT_KEY);
-      const response = https.get({ url: LICENSE_URL });
+      const response = https.get({ url: LICENSE_URL + '&account=' + encodeURIComponent(accountId) + '&product=' + encodeURIComponent(LICENSE_PRODUCT_KEY) });
       const body = response.body || '';
       // Case-insensitiv: NetSuite crypto liefert lowercase hex, Customer-
       // License-Records speichern oft UPPERCASE.

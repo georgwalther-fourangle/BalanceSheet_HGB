@@ -359,12 +359,13 @@ define([
     const chartLayout = (overrideLayout === 'lean' || overrideLayout === 'voll')
       ? overrideLayout
       : getChartLayout();
-    // Variant nach Resolve mit den aktuellen Customlist-Namen patchen — User-
-    // editierte Bilanz-Zeilen-Labels (via Mapping-Suitelet) schlagen so auf
-    // die HTML-Tabelle, PDF und XLSX durch.
-    const rawVariant = config.resolve(chartLayout);
-    const labelListMap = queries.getLineListMap();
-    const variant = config.applyLabelOverrides(rawVariant, labelListMap.scriptidToName);
+    // KEIN applyLabelOverrides mehr: Variant-Tree-Labels sind der Source
+    // of Truth (jede Variant definiert ihre eigene Bezeichnung — voll-style
+    // Customlist-Namen wuerden die laengeren lean-Labels ueberschreiben).
+    // Customer-side Label-Customizing per Customlist ist damit deaktiviert,
+    // dafuer ist die Variant-Konsistenz gewaehrleistet. Falls Kunden spaeter
+    // mal eigene Labels brauchen, fuehren wir per-Variant Customlists ein.
+    const variant = config.resolve(chartLayout);
     const AKTIVA_LINES = variant.aktiva;
     const PASSIVA_LINES = variant.passiva;
 
