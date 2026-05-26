@@ -23,11 +23,12 @@
 define([
   'N/ui/serverWidget', 'N/query', 'N/record', 'N/url', 'N/runtime',
   'N/redirect', 'N/log',
-  './4a_bilanz_style', './4a_bilanz_config',
+  './4a_bilanz_style', './4a_bilanz_config', './4a_bilanz_license',
 ], (serverWidget, query, record, url, runtime, redirect, log,
-    style, config) => {
+    style, config, license) => {
 
   const { esc } = style;
+  const { licenseOk, renderLicenseErrorHtml } = license;
   // Wie im Haupt-Suitelet: Variant-spezifische Helpers werden PRO REQUEST aus
   // config.resolve(layout) gezogen, nicht hier module-level destrukturiert.
 
@@ -269,7 +270,13 @@ define([
   const onRequest = (context) => {
     const { request, response } = context;
 
-    // TEMP TEST MODE — License-Gate auskommentiert. Vor Production wieder rein.
+    // License-Gate: prueft via 4a-License-Endpoint, ob der Account eine
+    // gueltige Bilanz-HGB-Lizenz hat. Cache 24h, nur positive Antworten.
+    if (!licenseOk()) {
+      response.setHeader({ name: 'Content-Type', value: 'text/html; charset=utf-8' });
+      response.write(renderLicenseErrorHtml());
+      return;
+    }
 
     // --- POST: action='labels' → Customlist-Werte speichern, sonst Konto-
     //          Overrides speichern. Beide Pfade enden mit GET-Redirect samt
